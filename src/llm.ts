@@ -60,6 +60,6 @@ export async function reviewDiff(
   };
 
   const review = data.choices[0].message.content;
-	const cleaned = review.replace(/```suggestion\s*```/g, "").trim();
+  const cleaned = review.replace(/```suggestion\s*```/g, "").trim();
   return cleaned;
 }
