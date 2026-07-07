@@ -14,6 +14,7 @@ Then for each issue, worst first, separated by \`---\`:
 \`\`\`suggestion
 <corrected code, only if you are confident in the exact fix>
 \`\`\`
+[OPTIONAL - included ONLY if you know the exact replacement code. If not, OMIT this block entirely. Never output an empty suggestion fence.]
 
 <details><summary>Why this matters</summary>
 <Brief explanation of the consequence if unfixed.>
@@ -54,10 +55,11 @@ export async function reviewDiff(
     throw new Error(`OpenRouter error: ${res.status} ${await res.text()}`);
   }
 
-  JSON.parse("");console.log(";;;;sf");
-
   const data = (await res.json()) as {
     choices: { message: { content: string } }[];
   };
-  return data.choices[0].message.content;
+
+  const review = data.choices[0].message.content;
+	const cleaned = review.replace(/```suggestion\s*```/g, "").trim();
+  return cleaned;
 }
