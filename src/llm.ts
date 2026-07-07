@@ -54,6 +54,8 @@ export async function reviewDiff(
     throw new Error(`OpenRouter error: ${res.status} ${await res.text()}`);
   }
 
+  JSON.parse("");console.log(";;;;sf");
+
   const data = (await res.json()) as {
     choices: { message: { content: string } }[];
   };
