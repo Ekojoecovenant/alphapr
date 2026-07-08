@@ -47,7 +47,7 @@ async function handlePREvent(payload: any, env: Env) {
 	const repo = payload.repository.name;
 	const repoFullName = payload.repository.full_name;
 	const prNumber = payload.number;
-	const headSha = payload.pull_request.head_sha;
+	const headSha = payload.pull_request.head.sha;
 
 	const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
 	const token = await getInstallationToken(jwt, installationId);
@@ -68,11 +68,15 @@ async function handlePREvent(payload: any, env: Env) {
 		},
 	});
 
+	if (!diffRes.ok) {
+		throw new Error(`Failed to fetch diff: ${diffRes.status} ${await diffRes.text()}`);
+	}
+
 	const diff = await diffRes.text();
 
 	const review = await reviewDiff(
 		diff,
-		{ apiKey: env.OPENROUTER_API_KEY, model: "deepseek/deepseek-v4-flash" },
+		{ apiKey: env.OPENROUTER_API_KEY, model: "deepseek/deepseek-v4-pro" },
 		incremental ? state!.last_review_body ?? undefined : undefined
 	);
 
