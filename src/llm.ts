@@ -34,8 +34,20 @@ RULES:
 
 export async function reviewDiff(
   diff: string,
-  config: { apiKey: string; model: string }
+  config: { apiKey: string; model: string },
+  previousReview?: string,
 ): Promise<string> {
+  const user_messages = [{
+    role: "user",
+    content: `Review this pull request diff:\n\n\`\`\`diff\n${diff}\n\`\`\``,
+  }];
+
+  if (previousReview) {
+    user_messages.unshift({
+      role: "user",
+      content: `You previously reviewed this PR and said the following. Do NOT repeat points you already made - review only the new changes:\n\n${previousReview}`,
+    });
+  }
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -45,8 +57,11 @@ export async function reviewDiff(
     body: JSON.stringify({
       model: config.model,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: `Review this pull request diff:\n\n\`\`\`diff\n${diff}\n\`\`\`` },
+        {
+          role: "system",
+          content: SYSTEM_PROMPT,
+        },
+        ...user_messages,
       ],
     }),
   });
@@ -59,7 +74,14 @@ export async function reviewDiff(
     choices: { message: { content: string } }[];
   };
 
-  const review = data.choices[0].message.content;
+  const review = data.choices[0]?.message?.content;
+  if (!review) {
+    throw new Error("OpenRouter response contained no choices");
+  }
+
   const cleaned = review.replace(/```suggestion\s*```/g, "").trim();
+  if (!cleaned) {
+    throw new Error("Review was empty after sanitization");
+  }
   return cleaned;
 }

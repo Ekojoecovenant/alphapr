@@ -10,20 +10,33 @@
 	"observability": {
 		"enabled": true,
 		"logs": {
-      "enabled": true,
-      "invocation_logs": true
-    },
-    "traces": {
-      "enabled": false
-    }
+			"enabled": true,
+			"invocation_logs": true
+		},
+		"traces": {
+			"enabled": false
+		}
 	},
 	"upload_source_maps": true,
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
 	"secrets": {
-		"required": ["GITHUB_WEBHOOK_SECRET", "GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY", "OPENROUTER_API_KEY"]
-	}
+		"required": [
+			"GITHUB_WEBHOOK_SECRET",
+			"GITHUB_APP_ID",
+			"GITHUB_APP_PRIVATE_KEY",
+			"OPENROUTER_API_KEY"
+		]
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "pr-agent-db",
+			"database_id": "c0154d78-cb82-4931-a026-64b5d5c441ae",
+			"remote": true
+		}
+	]
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

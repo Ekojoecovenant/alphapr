@@ -1,3 +1,4 @@
+import { getReviewState, saveReviewState } from './db';
 import { postReviewComment } from './github-api';
 import { createAppJWT, getInstallationToken } from './github-auth';
 import { reviewDiff } from './llm';
@@ -44,29 +45,38 @@ async function handlePREvent(payload: any, env: Env) {
 	const installationId = payload.installation.id;
 	const owner = payload.repository.owner.login;
 	const repo = payload.repository.name;
+	const repoFullName = payload.repository.full_name;
 	const prNumber = payload.number;
+	const headSha = payload.pull_request.head_sha;
 
 	const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
 	const token = await getInstallationToken(jwt, installationId);
 
-	const diffRes = await fetch(
-		`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`,
-		{
-			headers: {
-				Authorization: `Bearer ${token}`,
-				Accept: "application/vnd.github.diff",
-				"User-Agent": "alphacode-pr-agent",
-			},
-		}
-	);
+	const state = await getReviewState(env.DB, repoFullName, prNumber);
+
+	const incremental = state !== null && payload.action === "synchronize";
+
+	const diffUrl = incremental
+		?	`https://api.github.com/repos/${owner}/${repo}/compare/${state.last_reviewed_sha}...${headSha}`
+		:	`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`;
+	
+	const diffRes = await fetch(diffUrl, {
+		headers: {
+			Authorization: `Bearer ${token}`,
+			Accept: "application/vnd.github.diff",
+			"User-Agent": "alphacode-pr-agent",
+		},
+	});
 
 	const diff = await diffRes.text();
 
-	const review = await reviewDiff(diff, {
-		apiKey: env.OPENROUTER_API_KEY,
-		model: "deepseek/deepseek-v4-flash",
-	});
+	const review = await reviewDiff(
+		diff,
+		{ apiKey: env.OPENROUTER_API_KEY, model: "deepseek/deepseek-v4-flash" },
+		incremental ? state!.last_review_body ?? undefined : undefined
+	);
 
 	await postReviewComment(token, owner, repo, prNumber, review);
-	console.log(`✅ Posted review on PR #${prNumber}`);
+	await saveReviewState(env.DB, repoFullName, prNumber, headSha, review);
+	console.log(`✅ Posted ${incremental ? "incremental" : "full"} review on PR #${prNumber}`);
 }
