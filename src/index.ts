@@ -56,28 +56,46 @@ async function handlePREvent(payload: any, env: Env) {
 
 	const incremental = state !== null && payload.action === "synchronize";
 
-	const diffUrl = incremental
-		?	`https://api.github.com/repos/${owner}/${repo}/compare/${state.last_reviewed_sha}...${headSha}`
-		:	`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`;
-	
-	const diffRes = await fetch(diffUrl, {
-		headers: {
-			Authorization: `Bearer ${token}`,
-			Accept: "application/vnd.github.diff",
-			"User-Agent": "alphacode-pr-agent",
-		},
-	});
+	const compareUrl = `https://api.github.com/repos/${owner}/${repo}/compare/${state?.last_reviewed_sha}...${headSha}`;
+	const fullPrUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`;
 
-	if (!diffRes.ok) {
-		throw new Error(`Failed to fetch diff: ${diffRes.status} ${await diffRes.text()}`);
+	const diffHeaders = {
+		Authorization: `Bearer ${token}`,
+		Accept: "application/vnd.github.diff",
+		"User-Agent": "alphacode-pr-agent",
+	};
+
+	let diff: string;
+	let usedIncremental = incremental;
+
+	if (incremental) {
+		const compareRes = await fetch(compareUrl, { headers: diffHeaders });
+
+		if (compareRes.ok) {
+			diff = await compareRes.text();
+		} else if (compareRes.status === 404) {
+			console.log(`Compare 404 (force-push?), falling back to full diff for PR #${prNumber}`);
+			usedIncremental = false;
+			const fullRes = await fetch(fullPrUrl, { headers: diffHeaders });
+			if (!fullRes.ok) {
+				throw new Error(`Failed to fetch full diff after fallback: ${fullRes.status} ${(await fullRes.text()).slice(0, 300)}`);
+			}
+			diff = await fullRes.text();
+		} else {
+			throw new Error(`Failed to fetch compare diff: ${compareRes.status} ${(await compareRes.text()).slice(0, 300)}`);
+		}
+	} else {
+		const fullRes = await fetch(fullPrUrl, { headers: diffHeaders });
+		if (!fullRes.ok) {
+			throw new Error(`Failed to fetch full diff: ${fullRes.status} ${(await fullRes.text()).slice(0, 300)}`);
+		}
+		diff = await fullRes.text();
 	}
-
-	const diff = await diffRes.text();
-
+	
 	const review = await reviewDiff(
 		diff,
 		{ apiKey: env.OPENROUTER_API_KEY, model: "deepseek/deepseek-v4-pro" },
-		incremental ? state!.last_review_body ?? undefined : undefined
+		usedIncremental ? state!.last_review_body ?? undefined : undefined
 	);
 
 	await postReviewComment(token, owner, repo, prNumber, review);

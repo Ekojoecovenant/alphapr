@@ -54,6 +54,8 @@ export async function reviewDiff(
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
+      "HTTP-Referer": "https://github.com/Ekojoecovenant/pr-agent",
+      "X-Title": "AlphaCode PR Agent",
     },
     body: JSON.stringify({
       model: config.model,
