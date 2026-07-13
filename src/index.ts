@@ -4,8 +4,18 @@ import { createAppJWT, getInstallationToken } from './github-auth';
 import { reviewDiff } from './llm';
 import { verifySignature } from "./verify";
 
+interface ReviewJob {
+	installationId: number;
+	owner: string;
+	repo: string;
+	repoFullName: string;
+	prNumber: number;
+	headSha: string;
+	action: "opened" | "synchronize";
+}
+
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     if (request.method !== "POST") {
       return new Response("PR Agent is alive", { status: 200 });
     }
@@ -30,34 +40,44 @@ export default {
 			event === "pull_request" &&
 			(payload.action === "opened" || payload.action === "synchronize")
 		) {
-			ctx.waitUntil(
-				handlePREvent(payload, env).catch((err) => {
-					console.error(`PR event handling failed:`, err);
-				})
-			);
+			const job: ReviewJob = {
+				installationId: payload.installation.id,
+				owner: payload.repository.owner.login,
+				repo: payload.repository.name,
+				repoFullName: payload.repository.full_name,
+				prNumber: payload.number,
+				headSha: payload.pull_request.head.sha,
+				action: payload.action,
+			}
+			await env.REVIEW_QUEUE.send(job);
 		}
 
     return new Response("ok", { status: 200 });
   },
+
+	async queue(batch: MessageBatch<ReviewJob>, env: Env): Promise<void> {
+		for (const message of batch.messages) {
+			try {
+				await handlePREvent(message.body, env);
+				message.ack();
+			} catch (err) {
+				console.error(`Review job failed (attempt ${message.attempts}):`, err);
+				message.retry();
+			}
+		}
+	}
 };
 
-async function handlePREvent(payload: any, env: Env) {
-	const installationId = payload.installation.id;
-	const owner = payload.repository.owner.login;
-	const repo = payload.repository.name;
-	const repoFullName = payload.repository.full_name;
-	const prNumber = payload.number;
-	const headSha = payload.pull_request.head.sha;
-
+async function handlePREvent(job: ReviewJob, env: Env) {
 	const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
-	const token = await getInstallationToken(jwt, installationId);
+	const token = await getInstallationToken(jwt, job.installationId);
 
-	const state = await getReviewState(env.DB, repoFullName, prNumber);
+	const state = await getReviewState(env.DB, job.repoFullName, job.prNumber);
 
-	const incremental = state !== null && payload.action === "synchronize";
+	const incremental = state !== null && job.action === "synchronize";
 
-	const compareUrl = `https://api.github.com/repos/${owner}/${repo}/compare/${state?.last_reviewed_sha}...${headSha}`;
-	const fullPrUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`;
+	const compareUrl = `https://api.github.com/repos/${job.owner}/${job.repo}/compare/${state?.last_reviewed_sha}...${job.headSha}`;
+	const fullPrUrl = `https://api.github.com/repos/${job.owner}/${job.repo}/pulls/${job.prNumber}`;
 
 	const diffHeaders = {
 		Authorization: `Bearer ${token}`,
@@ -74,7 +94,7 @@ async function handlePREvent(payload: any, env: Env) {
 		if (compareRes.ok) {
 			diff = await compareRes.text();
 		} else if (compareRes.status === 404) {
-			console.log(`Compare 404 (force-push?), falling back to full diff for PR #${prNumber}`);
+			console.log(`Compare 404 (force-push?), falling back to full diff for PR #${job.prNumber}`);
 			usedIncremental = false;
 			const fullRes = await fetch(fullPrUrl, { headers: diffHeaders });
 			if (!fullRes.ok) {
@@ -98,7 +118,7 @@ async function handlePREvent(payload: any, env: Env) {
 		usedIncremental ? state!.last_review_body ?? undefined : undefined
 	);
 
-	await postReviewComment(token, owner, repo, prNumber, review);
-	await saveReviewState(env.DB, repoFullName, prNumber, headSha, review);
-	console.log(`✅ Posted ${incremental ? "incremental" : "full"} review on PR #${prNumber}`);
+	await postReviewComment(token, job.owner, job.repo, job.prNumber, review);
+	await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, review);
+	console.log(`✅ Posted ${usedIncremental ? "incremental" : "full"} review on PR #${job.prNumber}`);
 }
