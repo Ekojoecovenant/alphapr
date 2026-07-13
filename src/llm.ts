@@ -50,7 +50,7 @@ export async function reviewDiff(
   }
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
-    signal: AbortSignal.timeout(25_000),
+    signal: AbortSignal.timeout(120_000),
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
