@@ -62,7 +62,7 @@ export async function getInstallationToken(
       headers: {
         Authorization: `Bearer ${appJwt}`,
         Accept: "application/vnd.github+json",
-        "User-Agent": "alphacode-pr-agent", // GitHub rejects requests without a UA
+        "User-Agent": "alphpr", // GitHub rejects requests without a UA
       },
     }
   );

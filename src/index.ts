@@ -17,7 +17,7 @@ interface ReviewJob {
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     if (request.method !== "POST") {
-      return new Response("PR Agent is alive", { status: 200 });
+      return new Response("AlphaPR is alive", { status: 200 });
     }
 
     const rawBody = await request.text();
@@ -82,7 +82,7 @@ async function handlePREvent(job: ReviewJob, env: Env) {
 	const diffHeaders = {
 		Authorization: `Bearer ${token}`,
 		Accept: "application/vnd.github.diff",
-		"User-Agent": "alphacode-pr-agent",
+		"User-Agent": "alphapr",
 	};
 
 	let diff: string;

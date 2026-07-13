@@ -12,7 +12,7 @@ export async function postReviewComment(
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
-        "User-Agent": "alphacode-pr-agent",
+        "User-Agent": "alphapr",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ body }),
