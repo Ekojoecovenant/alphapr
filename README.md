@@ -8,14 +8,14 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 
 ## How it works
 
-### Step 1: Cloudflare Worker (fast path, milliseconds)
+### Step 1 — Cloudflare Worker (fast path, milliseconds)
 
 1. GitHub sends a `pull_request` webhook (`opened` / `synchronize`)
 2. Worker verifies the HMAC-SHA256 signature
 3. Worker enqueues a small, typed review job
 4. Worker responds `200` to GitHub immediately
 
-### Step 2: Cloudflare Queue consumer (slow path, up to 15 minutes)
+### Step 2 — Cloudflare Queue consumer (slow path, up to 15 minutes)
 
 1. Consume the job (with automatic retries and a dead-letter queue for jobs that fail repeatedly)
 2. Authenticate as the GitHub App (short-lived JWT → installation access token)
@@ -74,11 +74,16 @@ pnpm install
 ### 4. Set secrets
 
 ```bash
-pnpm wrangler secret put GITHUB_WEBHOOK_SECRET   # from step 1
-pnpm wrangler secret put GITHUB_APP_ID           # from step 1
-pnpm wrangler secret put GITHUB_APP_PRIVATE_KEY  # full contents of pk8.pem
-pnpm wrangler secret put OPENROUTER_API_KEY      # your key — any model
+pnpm wrangler secret put GITHUB_WEBHOOK_SECRET    # from step 1
+pnpm wrangler secret put GITHUB_APP_ID            # from step 1
+pnpm wrangler secret put GITHUB_APP_PRIVATE_KEY   # full contents of pk8.pem
+pnpm wrangler secret put OPENROUTER_API_KEY       # fallback key for the FALLBACK_OWNER's own repos
+pnpm wrangler secret put KEY_ENCRYPTION_SECRET    # openssl rand -hex 32 — encrypts stored tenant keys
 ```
+
+> ⚠️ `KEY_ENCRYPTION_SECRET` encrypts stored tenant API keys and must never be rotated without re-encrypting existing keys. Back it up in a password manager.
+
+Also set your GitHub username in `wrangler.jsonc` → `vars.FALLBACK_OWNER` — PRs on that account's repos fall back to the `OPENROUTER_API_KEY` secret when no per-installation key is configured.
 
 Delete `pk8.pem` from disk afterwards. Secrets live in Cloudflare's secret store, never in the repo.
 
@@ -90,11 +95,12 @@ pnpm wrangler queues create pr-review-dlq
 pnpm wrangler d1 create pr-agent-db
 ```
 
-Update `wrangler.jsonc` with the D1 `database_id` from the output, then apply the schema:
+Update `wrangler.jsonc` with the D1 `database_id` from the output, then apply the migrations:
 
 ```bash
-pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0001_init.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/schema.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0002_add_review_body.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0003_add_installations.sql
 ```
 
 ### 6. Deploy and connect
@@ -107,11 +113,13 @@ Copy the deployed Worker URL into your GitHub App's **Webhook URL**, then **Inst
 
 ### Choosing a model
 
-The model is set in the review call (any model available on OpenRouter works). Slower, stronger models produce deeper reviews; faster models keep costs down. Swap freely — it's one line.
+The model is set per installation (any model available on OpenRouter works). Slower, stronger models produce deeper reviews; faster models keep costs down.
 
 ## Roadmap
 
 - **Line-anchored review comments** — findings attached to the exact diff lines, with working *Apply suggestion* buttons and resolvable threads
+- **Review status indicator** — "Reviewing…" comment posted immediately, edited in place with the verdict
+- **Self-serve key setup** — OAuth-verified configuration page for installations
 - **Per-repo configuration** — model, severity thresholds, and review style per installation
 - **Free-tier mode** — a no-queue path (fast models only) so self-hosters can run on Cloudflare's free plan
 - **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis

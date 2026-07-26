@@ -21,6 +21,13 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	"vars": {
+		"FALLBACK_OWNER": "Ekojoecovenant"
+	},
+
+	// ⚠️ KEY_ENCRYPTION_SECRET is PERSISTENT. It encrypts all stored tenant API keys.
+	// Rotating it without re-encrypting every installations.api_key_encrypted row
+	// will make all stored keys permanently unreadable.
 	"secrets": {
 		"required": [
 			"GITHUB_WEBHOOK_SECRET",

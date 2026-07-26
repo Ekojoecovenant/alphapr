@@ -6,3 +6,5 @@ CREATE TABLE IF NOT EXISTS installations (
     model TEXT NOT NULL DEFAULT 'deepseek/deepseek-v4-pro',
     created_at TEXT NOT NULL DEFAULT (datetime ('now'))
 );
+
+--

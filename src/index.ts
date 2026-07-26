@@ -10,6 +10,7 @@ import { createAppJWT, getInstallationToken } from "./github-auth";
 import { reviewDiff } from "./llm";
 import { verifySignature } from "./verify";
 import { decryptSecret } from "./crypto";
+import { PermanentError } from './errors';
 
 interface ReviewJob {
   installationId: number;
@@ -89,8 +90,13 @@ export default {
         await handlePREvent(message.body, env);
         message.ack();
       } catch (err) {
-        console.error(`Review job failed (attempt ${message.attempts}):`, err);
-        message.retry();
+        if (err instanceof PermanentError) {
+          console.error(`Permanent failure, not retrying:`, err);
+          message.ack();
+        } else {
+          console.error(`Review job failed (attempt ${message.attempts}):`, err);
+          message.retry();
+        }
       }
     }
   },
@@ -107,21 +113,30 @@ async function handlePREvent(job: ReviewJob, env: Env) {
   let model: string;
 
   if (installation?.api_key_encrypted) {
-    apiKey = await decryptSecret(installation.api_key_encrypted, env.KEY_ENCRYPTION_SECRET);
+    try {
+      apiKey = await decryptSecret(installation.api_key_encrypted, env.KEY_ENCRYPTION_SECRET);
+    } catch (err) {
+      throw new PermanentError(
+        `Failed to decrypt API key for installation ${job.installationId}: ${err instanceof Error ? err.message : err}`
+      );
+    }
+
     model = installation.model;
-  } else if (job.owner === "Ekojoecovenant") {
+  } else if (job.owner === env.FALLBACK_OWNER) {
     // Owner fallback: my own installs use the env key
     apiKey = env.OPENROUTER_API_KEY;
     model = "deepseek/deepseek-v4-pro";
   } else {
-    // Installed but unconfigured — inform, don't fail
-    await postReviewComment(
-      token,
-      job.owner,
-      job.repo,
-      job.prNumber,
-      `⚙️ **AlphaPR is installed but not configured yet.**\n\nAn OpenRouter API key is needed for this installation. See the [setup guide](https://github.com/Ekojoecovenant/alphapr#self-hosting) or contact the person who installed AlphaPR.`
-    );
+    // Installed but unconfigured — inform once (on opened), don't fail
+    if (job.action === "opened") {
+      await postReviewComment(
+        token,
+        job.owner,
+        job.repo,
+        job.prNumber,
+        `⚙️ **AlphaPR is installed but not configured yet.**\n\nAn OpenRouter API key is needed for this installation. See the [setup guide](https://github.com/Ekojoecovenant/alphapr#self-hosting) or contact the person who installed AlphaPR. Once configured, close and re-open this PR to trigger a review.`
+      );
+    }
     return; // handled outcome — no retry
   }
   // ─── end BYOK resolution ───

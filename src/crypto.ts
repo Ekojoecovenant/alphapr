@@ -2,6 +2,9 @@
 // Master key comes from the KEY_ENCRYPTION_SECRET env secret (32-byte hex).
 
 function hexToBytes(hex: string): Uint8Array {
+  if (!/^[0-9a-f]{64}$/i.test(hex)) {
+    throw new Error("Master key must be exactly 64 hex characters (32 bytes)");
+  }
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);

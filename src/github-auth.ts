@@ -1,3 +1,5 @@
+import { PermanentError } from './errors';
+
 function base64url(input: ArrayBuffer | string): string {
   const bytes =
     typeof input === "string"
@@ -67,8 +69,13 @@ export async function getInstallationToken(
     }
   );
 
+  if (res.status === 401 || res.status === 404) {
+    throw new PermanentError(
+      `Installation auth failed (revoked or removed?): ${res.status} ${(await res.text()).slice(0, 300)}`
+    );
+  }
   if (!res.ok) {
-    throw new Error(`Failed to get installation token: ${res.status} ${await res.text()}`);
+    throw new Error(`Failed to get installation token: ${res.status} ${(await res.text()).slice(0, 300)}`);
   }
 
   const data = (await res.json()) as { token: string };
