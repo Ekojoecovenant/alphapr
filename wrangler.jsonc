@@ -27,6 +27,8 @@
 			"GITHUB_APP_ID",
 			"GITHUB_APP_PRIVATE_KEY",
 			"OPENROUTER_API_KEY",
+			"KEY_ENCRYPTION_SECRET",
+			"ADMIN_SECRET"
 		]
 	},
 	"d1_databases": [
