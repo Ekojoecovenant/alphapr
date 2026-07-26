@@ -98,7 +98,7 @@ pnpm wrangler d1 create pr-agent-db
 Update `wrangler.jsonc` with the D1 `database_id` from the output, then apply the migrations:
 
 ```bash
-pnpm wrangler d1 execute pr-agent-db --remote --file=db/schema.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0001_init.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0002_add_review_body.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0003_add_installations.sql
 ```

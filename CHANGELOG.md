@@ -6,12 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follo
 ## [v0.2.0] — 2026-07-26
 
 ### Added
+
 - Multi-tenant BYOK: per-installation OpenRouter API keys, stored AES-GCM encrypted in D1
 - Installation lifecycle handling — rows created on install, keys deleted on uninstall
 - Setup guidance comment for installed-but-unconfigured repositories
 - Permanent-vs-transient failure classification in the queue consumer (permanent failures ack instead of burning retries)
 
 ### Changed
+
 - Fallback owner is now configured via `FALLBACK_OWNER` env var instead of a hardcoded username
 - Master key input is validated (must be 64 hex chars) instead of silently coerced
 
