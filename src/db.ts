@@ -1,3 +1,15 @@
+// INTERFACES AND ENUMS
+
+export interface InstallationConfig {
+  installation_id: number;
+  account_login: string;
+  api_key_encrypted: string | null;
+  model: string;
+}
+
+
+// HELPER FUNCTIONS
+
 export async function getReviewState(
   db: D1Database,
   repoFullName: string,
@@ -33,4 +45,37 @@ export async function saveReviewState(
     )
     .bind(repoFullName, prNumber, sha, reviewBody)
     .run();
+}
+
+export async function upsertInstallation(
+  db: D1Database,
+  installationId: number,
+  accountLogin: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO installations (installation_id, account_login)
+       VALUES (?, ?)
+       ON CONFLICT(installation_id) DO UPDATE SET account_login = excluded.account_login`
+    )
+    .bind(installationId, accountLogin)
+    .run();
+}
+
+export async function deleteInstallation(db: D1Database, installationId: number): Promise<void> {
+  await db.prepare(`DELETE FROM installations WHERE installation_id = ?`).bind(installationId).run();
+}
+
+export async function getInstallation(
+  db: D1Database,
+  installationId: number,
+): Promise<InstallationConfig | null> {
+  const row = await db
+    .prepare(
+      `SELECT installation_id, account_login, api_key_encrypted, model
+       FROM installations WHERE installation_id = ?`
+    )
+    .bind(installationId)
+    .first<InstallationConfig>();
+  return row ?? null;
 }
