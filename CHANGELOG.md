@@ -3,6 +3,21 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v0.6.0] — 2026-07-27
+
+### Added
+
+- GitHub Checks integration: an "AlphaPR Review" check run appears in-progress the moment a PR event arrives, then concludes with the review outcome — success (clean), action_required (has a major finding), or neutral (minor/nit only)
+- Failed reviews conclude the check run as failure (permanent) or neutral (retrying) instead of leaving it hanging
+
+### Fixed
+
+- Best-effort status updates in the failure path are isolated, so a failed comment edit can no longer leave the check run stuck in-progress
+
+> ⚠️ **Upgrade note:** this version adds the **Checks: Read & Write** permission. Existing installations must accept the new permission (GitHub sends installers a prompt) before check runs will appear.
+
+[v0.6.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v0.6.0
+
 ## [v0.5.0] — 2026-07-27
 
 ### Added
