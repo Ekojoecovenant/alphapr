@@ -11,6 +11,7 @@ import { reviewDiff } from "./llm";
 import { verifySignature } from "./verify";
 import { decryptSecret } from "./crypto";
 import { PermanentError } from "./errors";
+import { handleSetup } from './setup';
 
 interface ReviewJob {
   installationId: number;
@@ -25,9 +26,12 @@ interface ReviewJob {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const setupResponse = await handleSetup(request, env);
+    if (setupResponse) return setupResponse;
+
     if (request.method !== "POST") {
       return new Response("AlphaPR is alive", { status: 200 });
-    }
+    } 
 
     const rawBody = await request.text();
 
