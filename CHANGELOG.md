@@ -3,6 +3,19 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v0.3.0] — 2026-07-27
+
+### Added
+
+- Live review status: a "🔍 Reviewing…" comment is posted the moment a PR event arrives, then edited in place into the verdict when the review completes
+- Failure visibility: if a review fails, the status comment is updated with a retry or permanent-failure notice instead of failing silently
+- Setup guidance for unconfigured installations now reuses the status comment instead of posting new ones
+
+### Fixed
+
+- A state-save failure after a successful review no longer overwrites the posted verdict or re-runs the LLM call
+- Deleted/inaccessible comments (404) are treated as permanent failures instead of burning queue retries
+
 ## [v0.2.0] — 2026-07-26
 
 ### Added
