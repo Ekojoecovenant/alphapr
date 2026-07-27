@@ -1,53 +1,113 @@
-const SYSTEM_PROMPT = `You are a precise code reviewer. You receive a unified diff from a pull request and produce ONE review comment in GitHub-flavored Markdown.
+export type Severity = "major" | "minor" | "nit";
 
-OUTPUT FORMAT — follow this structure exactly:
+export interface Finding {
+  path: string;
+  line: number;
+  severity: Severity;
+  title: string;
+  body: string;
+  suggestion?: string;
+}
 
-Line 1 is always a verdict:
-- If no real issues: \`✅ **LGTM** — no issues found.\` and STOP. Output nothing else.
-- Otherwise: \`**Verdict:** ⚠️ N issues (X major, Y minor)\`
+export interface ReviewResult {
+  /** One-line verdict, e.g. "⚠️ 2 issues (1 major, 1 minor)" or "✅ LGTM — no issues found." */
+  verdict: string;
+  findings: Finding[];
+  /** Set when the model's output couldn't be parsed as JSON — raw text fallback */
+  raw?: string;
+}
 
-Then for each issue, worst first, separated by \`---\`:
+const SYSTEM_PROMPT = `You are a precise code reviewer. You receive a unified diff in which every line of the NEW version of each file is prefixed with its line number, like "42: + const x = 1;".
 
-### <severity emoji> <severity> — \`<file>:<line>\`
-<One-sentence description of the problem.>
+Respond with ONLY a JSON object — no markdown fences, no prose before or after — in exactly this shape:
 
-\`\`\`suggestion
-<corrected code, only if you are confident in the exact fix>
-\`\`\`
-[OPTIONAL - included ONLY if you know the exact replacement code. If not, OMIT this block entirely. Never output an empty suggestion fence.]
-
-<details><summary>Why this matters</summary>
-<Brief explanation of the consequence if unfixed.>
-</details>
-
-SEVERITY TIERS:
-- 🔴 Major: bugs, security issues, data loss, broken logic
-- 🟡 Minor: error-handling gaps, misleading names, typos in user-facing text
-- 🟢 Nit: style-level observations (use sparingly)
+{
+  "verdict": "one-line summary",
+  "findings": [
+    {
+      "path": "src/file.ts",
+      "line": 42,
+      "severity": "major",
+      "title": "Short description of the problem",
+      "body": "1-3 sentences: what is wrong and its consequence if unfixed.",
+      "suggestion": "the corrected code for exactly that one line"
+    }
+  ]
+}
 
 RULES:
-- Maximum 5 issues. If more exist, show the worst 5 and end with one line: "Also noticed N minor items not shown."
+- "line" MUST be one of the numeric prefixes shown in the diff for that file. Never invent line numbers.
+- "severity" is "major" (bugs, security issues, data loss, broken logic), "minor" (error-handling gaps, misleading names, typos in user-facing text), or "nit" (style-level; use sparingly).
+- "suggestion" is optional. Include it ONLY if you are confident in the exact replacement for that single line. It must contain only the replacement code — no backticks, no fences, no line-number prefix. Omit the field entirely otherwise.
+- Maximum 5 findings, worst first. If more exist, include the worst 5 and mention the rest in the verdict.
 - Comment ONLY on real issues in the diff. Do not invent problems. Do not review unchanged code.
-- No greetings, no thanks, no sign-offs, no offers to help further.
-- Only include a suggestion fence when you're confident in the exact replacement code; otherwise describe the fix in prose.
-- File/line references must come from the diff hunks, not guesses.`;
+- If there are no real issues: "verdict" is "✅ LGTM — no issues found." and "findings" is [].
+- If there are issues: "verdict" is "⚠️ N issues (X major, Y minor, Z nits)" adjusted to the actual counts.`;
+
+const VALID_SEVERITIES = new Set<string>(["major", "minor", "nit"]);
+
+function parseReviewJson(text: string): ReviewResult | null {
+  // Tolerate models that wrap output in fences despite instructions
+  const cleaned = text
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/, "")
+    .trim();
+
+  try {
+    const data = JSON.parse(cleaned) as { verdict?: unknown; findings?: unknown };
+    if (typeof data.verdict !== "string" || !Array.isArray(data.findings)) return null;
+
+    const findings: Finding[] = [];
+    for (const f of data.findings) {
+      if (
+        typeof f?.path === "string" &&
+        typeof f?.line === "number" &&
+        Number.isInteger(f.line) &&
+        typeof f?.severity === "string" &&
+        VALID_SEVERITIES.has(f.severity) &&
+        typeof f?.title === "string" &&
+        typeof f?.body === "string" &&
+        (f.suggestion === undefined || typeof f.suggestion === "string")
+      ) {
+        findings.push({
+          path: f.path,
+          line: f.line,
+          severity: f.severity as Severity,
+          title: f.title,
+          body: f.body,
+          suggestion: typeof f.suggestion === "string" && f.suggestion.trim() ? f.suggestion : undefined,
+        });
+      }
+    }
+    return { verdict: data.verdict, findings: findings.slice(0, 5) };
+  } catch {
+    return null;
+  }
+}
 
 export async function reviewDiff(
-  diff: string,
+  annotatedDiff: string,
   config: { apiKey: string; model: string },
-  previousReview?: string,
-): Promise<string> {
-  const user_messages = [{
-    role: "user",
-    content: `Review this pull request diff:\n\n\`\`\`diff\n${diff}\n\`\`\``,
-  }];
+  previousReview?: string
+): Promise<ReviewResult> {
+  const userMessages: { role: string; content: string }[] = [];
 
   if (previousReview) {
-    user_messages.unshift({
+    userMessages.push({
       role: "user",
-      content: `You previously reviewed this PR and said the following. Do NOT repeat points you already made - review only the new changes:\n\n${previousReview}`,
+      content: `You previously reviewed this PR and said the following. Do NOT repeat points you already made — review only the new changes:
+
+${previousReview}`,
     });
   }
+
+  userMessages.push({
+    role: "user",
+    content: `Review this pull request diff:
+
+${annotatedDiff}`,
+  });
+
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     signal: AbortSignal.timeout(120_000),
@@ -59,32 +119,26 @@ export async function reviewDiff(
     },
     body: JSON.stringify({
       model: config.model,
-      messages: [
-        {
-          role: "system",
-          content: SYSTEM_PROMPT,
-        },
-        ...user_messages,
-      ],
+      max_tokens: 2000,
+      provider: { sort: "throughput" },
+      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages],
     }),
   });
 
   if (!res.ok) {
-    throw new Error(`OpenRouter error: ${res.status} ${await res.text()}`);
+    throw new Error(`OpenRouter error: ${res.status} ${(await res.text()).slice(0, 300)}`);
   }
 
-  const data = (await res.json()) as {
-    choices: { message: { content: string } }[];
-  };
-
-  const review = data.choices[0]?.message?.content;
-  if (!review) {
+  const data = (await res.json()) as { choices: { message: { content: string } }[] };
+  const content = data.choices[0]?.message?.content;
+  if (!content) {
     throw new Error("OpenRouter response contained no choices");
   }
 
-  const cleaned = review.replace(/```suggestion\s*```/g, "").trim();
-  if (!cleaned) {
-    throw new Error("Review was empty after sanitization");
-  }
-  return cleaned;
+  const parsed = parseReviewJson(content);
+  if (parsed) return parsed;
+
+  // Graceful degradation: model ignored the JSON contract — fall back to raw text
+  console.log("Review output was not valid JSON; falling back to raw text");
+  return { verdict: "", findings: [], raw: content.trim() };
 }

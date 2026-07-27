@@ -5,13 +5,15 @@ import {
   deleteInstallation,
   getInstallation,
 } from "./db";
-import { postReviewComment, editComment } from "./github-api";
+import { postReviewComment, editComment, ReviewCommentInput, createReview } from "./github-api";
 import { createAppJWT, getInstallationToken } from "./github-auth";
 import { reviewDiff } from "./llm";
 import { verifySignature } from "./verify";
 import { decryptSecret } from "./crypto";
 import { PermanentError } from "./errors";
 import { handleSetup } from './setup';
+import { renderAnchoredComment, renderForMemory, renderSummary, sortFindings } from './render';
+import { parseDiff } from './diff';
 
 interface ReviewJob {
   installationId: number;
@@ -238,26 +240,62 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     diff = await fullRes.text();
   }
 
-  const review = await reviewDiff(
-    diff,
+  // Parse + annotate the diff so the model gets real line numbers
+  const parsed = parseDiff(diff);
+
+  const result = await reviewDiff(
+    parsed.annotated,
     { apiKey, model },
     usedIncremental ? state!.last_review_body ?? undefined : undefined
   );
 
-  // Morph the placeholder into the verdict — or post fresh if the placeholder failed
-  if (job.statusCommentId !== null) {
-    await editComment(token, job.owner, job.repo, job.statusCommentId, review);
-  } else {
-    await postReviewComment(token, job.owner, job.repo, job.prNumber, review);
+  // Split findings into anchorable vs not, validated against the real diff
+  const anchored: typeof result.findings = [];
+  const unanchored: typeof result.findings = [];
+  for (const f of result.findings) {
+    if (parsed.validLines.get(f.path)?.has(f.line)) {
+      anchored.push(f);
+    } else {
+      if (result.findings.length > 0) {
+        console.log(`Unanchorable finding: ${f.path}:${f.line} (not in diff)`);
+      }
+      unanchored.push(f);
+    }
   }
 
-  try {
-    await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, review);
-  } catch (err) {
-    // Verdict is already visible; a state-save failure must not trigger a retry
-    // that overwrites it and re-runs the LLM.
-    console.error("Failed to save review state (comment already posted):", err);
+  // Post anchored findings as inline review comments; on failure, demote to summary
+  let anchoredCount = 0;
+  if (anchored.length > 0) {
+    const comments: ReviewCommentInput[] = sortFindings(anchored).map((f) => ({
+      path: f.path,
+      line: f.line,
+      side: "RIGHT",
+      body: renderAnchoredComment(f),
+    }));
+    try {
+      await createReview(token, job.owner, job.repo, job.prNumber, result.verdict, comments);
+      anchoredCount = anchored.length;
+    } catch (err) {
+      console.error("createReview failed; demoting anchored findings to summary:", err);
+      unanchored.push(...anchored);
+    }
   }
-  
-  console.log(`✅ Posted ${usedIncremental ? "incremental" : "full"} review on PR #${job.prNumber}`);
+
+  // Status comment morphs into the verdict + summary of anything unanchorable
+  const summary = renderSummary(result, anchoredCount, unanchored);
+  if (job.statusCommentId !== null) {
+    await editComment(token, job.owner, job.repo, job.statusCommentId, summary);
+  } else {
+    await postReviewComment(token, job.owner, job.repo, job.prNumber, summary);
+  }
+
+  // Memory stores the FULL review (all findings) regardless of where they were posted
+  try {
+    await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, renderForMemory(result));
+  } catch (err) {
+    console.error("Failed to save review state (comments already posted):", err);
+  }
+  console.log(
+    `✅ Posted ${usedIncremental ? "incremental" : "full"} review on PR #${job.prNumber} (${anchoredCount} inline, ${unanchored.length} in summary)`
+  );
 }
