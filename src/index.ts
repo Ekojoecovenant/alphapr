@@ -193,7 +193,7 @@ async function handlePREvent(job: ReviewJob, env: Env) {
   } else if (job.owner === env.FALLBACK_OWNER) {
     // Owner fallback: my own installs use the env key
     apiKey = env.OPENROUTER_API_KEY;
-    model = "deepseek/deepseek-v4-pro";
+    model = "deepseek/deepseek-v4-flash";
   } else {
     // Installed but unconfigured — inform once, don't fail
     const setupMessage = `⚙️ **AlphaPR is installed but not configured yet.**\n\nAn OpenRouter API key is needed for this installation. Configure it at https://alphapr.covenantekojoe.workers.dev/setup — once configured, close and re-open this PR to trigger a review.`;
