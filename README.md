@@ -1,10 +1,18 @@
 # AlphaPR
 
-**AlphaPR is a BYOK AI PR reviewer that reviews your pull requests — and remembers what it already said.**
+**AlphaPR is a BYOK AI PR reviewer that comments on the exact lines it's talking about — and remembers what it already said.**
 
-Bring your own OpenRouter key, pick any model, install the GitHub App on your repos. First push gets a full review; every push after that gets an incremental one, scoped to only what changed, with the bot's previous review as context so it never repeats itself.
+Bring your own OpenRouter key, pick any model, install the GitHub App on your repos. Findings land as inline comments on the changed lines, with one-click Apply-suggestion fixes. First push gets a full review; every push after that gets an incremental one, scoped to only what changed, with the bot's previous review as context so it never repeats itself.
 
 > **Status:** Working v1. AlphaPR reviews its own PRs — dogfooding since day one. APIs and setup may still change.
+
+## Features
+
+- **Line-anchored findings** — comments sit on the exact diff lines in the Files Changed tab, as resolvable threads with working *Apply suggestion* buttons
+- **Incremental memory** — stores what it reviewed and what it said, so updates get reviewed against only the new changes, without repeats
+- **BYOK, encrypted** — every installation brings its own OpenRouter key, AES-GCM encrypted at rest, configured through an OAuth-verified setup page
+- **Live status** — a "🔍 Reviewing…" comment appears instantly and morphs into the verdict (or a failure notice — no silent deaths)
+- **Self-healing** — force-pushes that erase the remembered commit are detected and recovered automatically
 
 ## How it works
 
@@ -22,9 +30,11 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 2. Authenticate as the GitHub App (short-lived JWT → installation access token)
 3. Resolve the installation's own OpenRouter key (stored encrypted) and model
 4. Check D1 state — first review of a PR gets the **full diff**; updates get **only the changes since the last reviewed commit**, plus the bot's previous review as context
-5. Send the diff to the LLM via OpenRouter — bring your own key, any model
-6. Edit the status comment in place with the review verdict (or a failure notice)
-7. Save the reviewed SHA and review body to D1
+5. Parse and annotate the diff — every line is prefixed with its true line number before the model sees it
+6. The model returns structured JSON findings; line references are validated against the real diff before anything is posted
+7. Valid findings are posted as **inline review comments** on the exact lines; anything unanchorable goes into the summary instead of failing
+8. The status comment morphs into the verdict and inline-comment count
+9. Save the reviewed SHA and review body to D1
 
 If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and falls back to a full review — then self-heals its state on the next push.
 
@@ -32,9 +42,11 @@ If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and 
 
 **A GitHub App, not a GitHub Action.** Actions live inside each repo's workflow files — fine for personal use, clunky for a product. An installable App needs its own backend to receive webhooks, and a Cloudflare Worker is that backend: edge latency, zero servers to manage.
 
-**A queue, because the first version broke.** The initial build did everything inside the webhook handler with `waitUntil()`. Then real LLM calls started blowing past the 30-second background limit — the logs literally showed reviews dying mid-generation (`TimeoutError`, cancelled at ~25s). The fix was the architecture the project should have had anyway: the Worker verifies and enqueues in milliseconds, then hands the task over to the queue, and the queue consumer handles the slow work gracefully — a 15-minute budget, automatic retries, and a dead-letter queue for anything that still fails.
+**A queue, because the first version broke.** The initial build did everything inside the webhook handler with `waitUntil()`. Then real LLM calls started blowing past the 30-second background limit — the logs literally showed reviews dying mid-generation. The fix was the architecture the project should have had anyway: the Worker verifies and enqueues in milliseconds, then hands the task over to the queue, and the queue consumer handles the slow work gracefully — a 15-minute budget, automatic retries, and a dead-letter queue for anything that still fails.
 
 **D1, because she remembers.** A single table stores the last reviewed commit SHA and the previous review body per PR. That's what makes incremental reviews possible — and what stops the bot from re-litigating the whole PR on every push.
+
+**Our own diff parser, because models can't count.** LLMs are unreliable at deriving line numbers from hunk offsets. So AlphaPR computes the numbers itself, hands them to the model inside the annotated diff, and verifies every returned line reference against the parsed diff before posting. Hallucinated locations demote gracefully to the summary instead of producing broken comments.
 
 **Encrypted BYOK, because it's multi-tenant.** Each installation stores its own OpenRouter key, AES-GCM encrypted before it touches the database. Keys are configured through an OAuth-verified setup page and deleted when the App is uninstalled.
 
@@ -137,18 +149,17 @@ GitHub OAuth verifies they have access to the installation, then their OpenRoute
 
 ### Choosing a model
 
-The model is set per installation on the setup page (any model available on OpenRouter works). Slower, stronger models produce deeper reviews; faster models keep costs down.
+The model is set per installation on the setup page (any model available on OpenRouter works). **Fast, non-reasoning models are recommended** — reasoning models produce deeper analysis but can take minutes per review and require large token budgets; fast models return in seconds and the structured review contract carries the quality.
 
 ## Roadmap
 
-- **Line-anchored review comments** — findings attached to the exact diff lines, with working *Apply suggestion* buttons and resolvable threads
 - **Checks API integration** — review status in the PR checks list, pending → complete like CI
 - **Per-repo configuration** — model, severity thresholds, and review style per installation
 - **Free-tier mode** — a no-queue path (fast models only) so self-hosters can run on Cloudflare's free plan
 - **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis
-- **Test coverage** — unit tests for the OAuth setup flow and queue consumer
+- **Test coverage** — unit tests for the diff parser, OAuth setup flow, and queue consumer
 - **Managed tier** — eventually: use AlphaPR's own hosted models, no key required
 
 ---
 
-Built in public by [AlphaCode](https://github.com/Ekojoecovenant). PRs welcome — they'll be reviewed by the bot, obviously.
+Built in public by [AlphaCode](https://github.com/Ekojoecovenant). PRs welcome — they'll be reviewed by the bot, obviously. Inline.

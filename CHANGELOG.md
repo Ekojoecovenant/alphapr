@@ -23,6 +23,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follo
 - Queue error logs now include the full error message and stack, not just a trace
 - Diff metadata lines ("\ No newline at end of file") and split artifacts are no longer numbered or anchorable
 - A failed summary edit after successful inline posting no longer retries the whole review
+- Inline reviews are pinned to the exact reviewed commit (`commit_id`), so comments can't anchor to code pushed mid-review
+- JSON extraction brace-matching is string-literal aware, so findings containing braces in code suggestions no longer truncate the parse
+- OpenRouter auth failures (401/403) are classified permanent — a revoked key is reported once instead of burning retries
 
 [v0.5.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v0.5.0
 
