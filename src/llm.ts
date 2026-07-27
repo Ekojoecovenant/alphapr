@@ -1,3 +1,5 @@
+import { PermanentError } from './errors';
+
 export type Severity = "major" | "minor" | "nit";
 
 export interface Finding {
@@ -165,7 +167,11 @@ ${annotatedDiff}`,
   });
 
   if (!res.ok) {
-    throw new Error(`OpenRouter error: ${res.status} ${(await res.text()).slice(0, 300)}`);
+    const text = (await res.text()).slice(0, 300);
+    if (res.status === 401 || res.status === 403) {
+      throw new PermanentError(`OpenRouter auth error: ${res.status} ${text}`);
+    }
+    throw new Error(`OpenRouter error: ${res.status} ${text}`);
   }
 
   const data = (await res.json()) as {

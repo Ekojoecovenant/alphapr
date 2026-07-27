@@ -293,7 +293,7 @@ async function handlePREvent(job: ReviewJob, env: Env) {
       body: renderAnchoredComment(f),
     }));
     try {
-      await createReview(token, job.owner, job.repo, job.prNumber, result.verdict, comments);
+      await createReview(token, job.owner, job.repo, job.prNumber, job.headSha, result.verdict, comments);
       anchoredCount = anchored.length;
     } catch (err) {
       console.error(

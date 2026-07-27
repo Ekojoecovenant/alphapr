@@ -72,6 +72,7 @@ export async function createReview(
   owner: string,
   repo: string,
   prNumber: number,
+  commitId: string,
   body: string,
   comments: ReviewCommentInput[]
 ): Promise<void> {
@@ -85,7 +86,7 @@ export async function createReview(
         "User-Agent": "alphapr",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ body, event: "COMMENT", comments }),
+      body: JSON.stringify({ commit_id: commitId, body, event: "COMMENT", comments }),
     }
   );
   if (!res.ok) {
