@@ -9,7 +9,10 @@ import {
   postReviewComment,
   editComment,
   createReview,
+  createCheckRun,
+  completeCheckRun,
   type ReviewCommentInput,
+  type CheckConclusion,
 } from "./github-api";
 import { createAppJWT, getInstallationToken } from "./github-auth";
 import { reviewDiff, type Finding } from "./llm";
@@ -34,6 +37,7 @@ interface ReviewJob {
   headSha: string;
   action: "opened" | "synchronize";
   statusCommentId: number | null;
+  checkRunId: number | null;
 }
 
 export default {
@@ -80,7 +84,7 @@ export default {
       return new Response("ok", { status: 200 });
     }
 
-    // PR events — post status placeholder, then enqueue
+    // PR events — post status placeholder + check run, then enqueue
     if (
       event === "pull_request" &&
       (payload.action === "opened" || payload.action === "synchronize")
@@ -89,23 +93,40 @@ export default {
       const owner = payload.repository.owner.login;
       const repo = payload.repository.name;
       const prNumber = payload.number;
+      const headSha = payload.pull_request.head.sha;
 
-      // Post the "reviewing..." placeholder. Best-effort: a failure here
-      // must never block the actual review from being enqueued.
+      // Mint one token for both the status comment and the check run.
+      // Best-effort: failures here must never block enqueueing the review.
       let statusCommentId: number | null = null;
+      let checkRunId: number | null = null;
       try {
         const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
         const token = await getInstallationToken(jwt, installationId);
-        statusCommentId = await postReviewComment(
-          token,
-          owner,
-          repo,
-          prNumber,
-          "🔍 **AlphaPR is reviewing this PR…**"
-        );
+
+        try {
+          statusCommentId = await postReviewComment(
+            token,
+            owner,
+            repo,
+            prNumber,
+            "🔍 **AlphaPR is reviewing this PR…**"
+          );
+        } catch (err) {
+          console.error(
+            `Failed to post status comment (continuing): ${err instanceof Error ? err.message : err}`
+          );
+        }
+
+        try {
+          checkRunId = await createCheckRun(token, owner, repo, headSha);
+        } catch (err) {
+          console.error(
+            `Failed to create check run (continuing): ${err instanceof Error ? err.message : err}`
+          );
+        }
       } catch (err) {
         console.error(
-          `Failed to post status comment (continuing anyway): ${err instanceof Error ? err.message : err}`
+          `Failed to authenticate for pre-review setup (continuing): ${err instanceof Error ? err.message : err}`
         );
       }
 
@@ -115,9 +136,10 @@ export default {
         repo,
         repoFullName: payload.repository.full_name,
         prNumber,
-        headSha: payload.pull_request.head.sha,
+        headSha,
         action: payload.action,
         statusCommentId,
+        checkRunId,
       };
       await env.REVIEW_QUEUE.send(job);
     }
@@ -140,20 +162,44 @@ export default {
           console.error(`Review job failed (attempt ${message.attempts}): ${errMsg}`);
         }
 
-        // Best-effort: surface the failure on the PR via the status comment.
-        if (message.body.statusCommentId !== null) {
+        // Best-effort: surface the failure on the PR (status comment + check run).
+        const body = message.body;
+        if (body.statusCommentId !== null || body.checkRunId !== null) {
           try {
             const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
-            const token = await getInstallationToken(jwt, message.body.installationId);
-            await editComment(
-              token,
-              message.body.owner,
-              message.body.repo,
-              message.body.statusCommentId,
-              isPermanent
-                ? "⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration."
-                : "⚠️ **AlphaPR review failed.** Retrying automatically…"
-            );
+            const token = await getInstallationToken(jwt, body.installationId);
+
+            if (body.statusCommentId !== null) {
+              try {
+                await editComment(
+                  token,
+                  body.owner,
+                  body.repo,
+                  body.statusCommentId,
+                  isPermanent
+                    ? "⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration."
+                    : "⚠️ **AlphaPR review failed.** Retrying automatically…"
+                );
+} catch (e) { console.warn('Failed to update comment, continuing to check-run:', e); }
+                /* fall through to the check-run update */
+              }
+            }
+
+            if (body.checkRunId !== null) {
+              try {
+                await completeCheckRun(
+                  token,
+                  body.owner,
+                  body.repo,
+                  body.checkRunId,
+                  isPermanent ? "failure" : "neutral",
+                  "AlphaPR review failed",
+                  isPermanent ? "This won't be retried." : "Retrying automatically…"
+                );
+              } catch {
+                /* never let status-surfacing break the queue handler */
+              }
+            }
           } catch {
             /* never let status-surfacing break the queue handler */
           }
@@ -195,7 +241,7 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     apiKey = env.OPENROUTER_API_KEY;
     model = "deepseek/deepseek-v4-flash";
   } else {
-    // Installed but unconfigured — inform once, don't fail
+    // Installed but unconfigured — inform once, conclude the check, don't fail
     const setupMessage = `⚙️ **AlphaPR is installed but not configured yet.**\n\nAn OpenRouter API key is needed for this installation. Configure it at https://alphapr.covenantekojoe.workers.dev/setup — once configured, close and re-open this PR to trigger a review.`;
 
     if (job.statusCommentId !== null) {
@@ -212,6 +258,18 @@ async function handlePREvent(job: ReviewJob, env: Env) {
       }
     } else if (job.action === "opened") {
       await postReviewComment(token, job.owner, job.repo, job.prNumber, setupMessage);
+    }
+
+    if (job.checkRunId !== null) {
+      await completeCheckRun(
+        token,
+        job.owner,
+        job.repo,
+        job.checkRunId,
+        "neutral",
+        "AlphaPR not configured",
+        "No OpenRouter API key is configured for this installation."
+      );
     }
     return; // handled outcome — no retry
   }
@@ -293,7 +351,15 @@ async function handlePREvent(job: ReviewJob, env: Env) {
       body: renderAnchoredComment(f),
     }));
     try {
-      await createReview(token, job.owner, job.repo, job.prNumber, job.headSha, result.verdict, comments);
+      await createReview(
+        token,
+        job.owner,
+        job.repo,
+        job.prNumber,
+        job.headSha,
+        result.verdict,
+        comments
+      );
       anchoredCount = anchored.length;
     } catch (err) {
       console.error(
@@ -318,9 +384,41 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     );
   }
 
+  // Conclude the check run based on the review outcome.
+  if (job.checkRunId !== null) {
+    const hasMajor = result.findings.some((f) => f.severity === "major");
+    const conclusion: CheckConclusion = result.raw
+      ? "neutral"
+      : hasMajor
+        ? "action_required"
+        : result.findings.length > 0
+          ? "neutral"
+          : "success";
+    const title = result.raw ? "Review posted" : result.verdict;
+    try {
+      await completeCheckRun(
+        token,
+        job.owner,
+        job.repo,
+        job.checkRunId,
+        conclusion,
+        title,
+        `${anchoredCount} inline comment${anchoredCount === 1 ? "" : "s"}, ${unanchored.length} in summary.`
+      );
+    } catch (err) {
+      console.error(`Failed to complete check run: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
   // Memory stores the FULL review (all findings) regardless of where they were posted
   try {
-    await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, renderForMemory(result));
+    await saveReviewState(
+      env.DB,
+      job.repoFullName,
+      job.prNumber,
+      job.headSha,
+      renderForMemory(result)
+    );
   } catch (err) {
     console.error(
       `Failed to save review state (comments already posted): ${err instanceof Error ? err.message : err}`
