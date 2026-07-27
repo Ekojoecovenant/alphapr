@@ -3,6 +3,20 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v0.4.0] — 2026-07-27
+
+### Added
+
+- Self-serve BYOK setup: visit `/setup` after installing to configure your OpenRouter key and model — GitHub OAuth verifies you have access to the installation before accepting a key
+- OAuth CSRF protection: browser-bound nonce cookie tied to the signed state parameter
+- Setup form tokens are HMAC-signed and expire after 10 minutes
+
+### Changed
+
+- Installation rows created via setup now store the real account login
+
+[v0.4.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v0.4.0
+
 ## [v0.3.0] — 2026-07-27
 
 ### Added
