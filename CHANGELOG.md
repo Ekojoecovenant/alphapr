@@ -3,6 +3,29 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v0.5.0] — 2026-07-27
+
+### Added
+
+- Line-anchored review comments: findings are posted inline on the exact changed lines via the Reviews API, with working Apply-suggestion buttons and resolvable threads
+- Structured JSON review contract: the model returns typed findings (path, line, severity, title, body, optional suggestion) instead of free-form Markdown
+- AlphaPR's own diff parser annotates every line with its true line number before prompting, and validates the model's line references before posting — hallucinated locations demote to the summary instead of failing
+- Multi-strategy JSON extraction: reviews are recovered from fenced, prose-buried, or reasoning-prefixed model output, with a raw-text fallback as the floor
+
+### Changed
+
+- The status comment now shows the verdict, a count of inline comments, and any findings that couldn't be anchored
+- Default fallback model switched to a fast non-reasoning model — reasoning-model latency and thinking-token budgets exceeded the review pipeline's limits
+- Reasoning-capable models are capped via OpenRouter's reasoning token controls so output budget is preserved
+
+### Fixed
+
+- Queue error logs now include the full error message and stack, not just a trace
+- Diff metadata lines ("\ No newline at end of file") and split artifacts are no longer numbered or anchorable
+- A failed summary edit after successful inline posting no longer retries the whole review
+
+[v0.5.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v0.5.0
+
 ## [v0.4.0] — 2026-07-27
 
 ### Added
