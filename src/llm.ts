@@ -46,15 +46,9 @@ RULES:
 
 const VALID_SEVERITIES = new Set<string>(["major", "minor", "nit"]);
 
-function parseReviewJson(text: string): ReviewResult | null {
-  // Tolerate models that wrap output in fences despite instructions
-  const cleaned = text
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/, "")
-    .trim();
-
+function tryParse(text: string): ReviewResult | null {
   try {
-    const data = JSON.parse(cleaned) as { verdict?: unknown; findings?: unknown };
+    const data = JSON.parse(text) as { verdict?: unknown; findings?: unknown };
     if (typeof data.verdict !== "string" || !Array.isArray(data.findings)) return null;
 
     const findings: Finding[] = [];
@@ -84,6 +78,49 @@ function parseReviewJson(text: string): ReviewResult | null {
   } catch {
     return null;
   }
+}
+
+function parseReviewJson(text: string): ReviewResult | null {
+  const trimmed = text.trim();
+
+  // Strategy 1: the whole output is JSON (possibly fenced at the edges)
+  const edgeCleaned = trimmed
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/, "")
+    .trim();
+  const direct = tryParse(edgeCleaned);
+  if (direct) return direct;
+
+  // Strategy 2: JSON is inside a fence ANYWHERE (e.g., after leaked reasoning).
+  // Take the LAST fenced block — reasoning may quote earlier partial JSON.
+  const fenceMatches = [...trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)];
+  for (let i = fenceMatches.length - 1; i >= 0; i--) {
+    const parsed = tryParse(fenceMatches[i][1].trim());
+    if (parsed) return parsed;
+  }
+
+  // Strategy 3: unfenced JSON buried in prose — brace-match from the last
+  // occurrence of '"verdict"' back to its opening brace, forward to its close.
+  const anchor = trimmed.lastIndexOf('"verdict"');
+  if (anchor !== -1) {
+    const start = trimmed.lastIndexOf("{", anchor);
+    if (start !== -1) {
+      let depth = 0;
+      for (let i = start; i < trimmed.length; i++) {
+        if (trimmed[i] === "{") depth++;
+        else if (trimmed[i] === "}") {
+          depth--;
+          if (depth === 0) {
+            const parsed = tryParse(trimmed.slice(start, i + 1));
+            if (parsed) return parsed;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 export async function reviewDiff(
