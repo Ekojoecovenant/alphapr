@@ -57,6 +57,6 @@ export async function editComment(
       throw new PermanentError(`Failed to edit comment ${commentId}: ${res.status} ${text}`);
     }
 
-    throw new Error(`Failed to edit comment ${commentId}: ${res.status} ${(await res.text()).slice(0, 300)}`);
+    throw new Error(`Failed to edit comment ${commentId}: ${res.status} ${text}`);
   }
 }
