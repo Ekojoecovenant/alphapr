@@ -97,3 +97,73 @@ export async function createReview(
     throw new Error(`Failed to create review: ${res.status} ${text}`);
   }
 }
+
+export async function createCheckRun(
+  token: string,
+  owner: string,
+  repo: string,
+  headSha: string
+): Promise<number> {
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/check-runs`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "alphapr",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "AlphaPR Review",
+      head_sha: headSha,
+      status: "in_progress",
+      started_at: new Date().toISOString(),
+    }),
+  });
+  if (!res.ok) {
+    const text = (await res.text()).slice(0, 300);
+    if (res.status === 404 || res.status === 403) {
+      throw new PermanentError(`Failed to create check run: ${res.status} ${text}`);
+    }
+    throw new Error(`Failed to create check run: ${res.status} ${text}`);
+  }
+  const data = (await res.json()) as { id: number };
+  return data.id;
+}
+
+export type CheckConclusion = "success" | "neutral" | "action_required" | "failure";
+
+export async function completeCheckRun(
+  token: string,
+  owner: string,
+  repo: string,
+  checkRunId: number,
+  conclusion: CheckConclusion,
+  title: string,
+  summary: string
+): Promise<void> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/check-runs/${checkRunId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "alphapr",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status: "completed",
+        conclusion,
+        completed_at: new Date().toISOString(),
+        output: { title, summary },
+      }),
+    }
+  );
+  if (!res.ok) {
+    const text = (await res.text()).slice(0, 300);
+    if (res.status === 404 || res.status === 403) {
+      throw new PermanentError(`Failed to complete check run: ${res.status} ${text}`);
+    }
+    throw new Error(`Failed to complete check run: ${res.status} ${text}`);
+  }
+}
