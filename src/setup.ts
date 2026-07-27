@@ -19,10 +19,26 @@ async function hmacSign(data: string, secret: string): Promise<string> {
 async function hmacVerify(data: string, sig: string, secret: string): Promise<boolean> {
   const expected = await hmacSign(data, secret);
   if (expected.length !== sig.length) return false;
-  // constant-time-ish compare
   let diff = 0;
   for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
   return diff === 0;
+}
+
+function randomHex(bytes: number): string {
+  const buf = crypto.getRandomValues(new Uint8Array(bytes));
+  return Array.from(buf)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function getCookie(request: Request, name: string): string | null {
+  const header = request.headers.get("Cookie");
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const [k, ...rest] = part.trim().split("=");
+    if (k === name) return rest.join("=");
+  }
+  return null;
 }
 
 function html(body: string, status = 200): Response {
@@ -41,25 +57,43 @@ button{padding:10px 24px;background:#1a7f37;color:#fff;border:0;border-radius:6p
 export async function handleSetup(request: Request, env: Env): Promise<Response | null> {
   const url = new URL(request.url);
 
-  // 1) Entry point: redirect to GitHub OAuth
+  // 1) Entry point: mint a browser-bound nonce, redirect to GitHub OAuth
   if (url.pathname === "/setup" && request.method === "GET") {
     const ts = Date.now().toString();
-    const state = `${ts}.${await hmacSign(ts, env.SETUP_SIGNING_SECRET)}`;
+    const nonce = randomHex(16);
+    const payload = `${ts}.${nonce}`;
+    const state = `${payload}.${await hmacSign(payload, env.SETUP_SIGNING_SECRET)}`;
+
     const redirect = new URL("https://github.com/login/oauth/authorize");
     redirect.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
     redirect.searchParams.set("redirect_uri", `${url.origin}/setup/callback`);
     redirect.searchParams.set("state", state);
-    return Response.redirect(redirect.toString(), 302);
+
+    // Manual 302 so we can attach the nonce cookie (Response.redirect can't take headers)
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: redirect.toString(),
+        "Set-Cookie": `alphapr_setup_nonce=${nonce}; HttpOnly; Secure; Path=/setup; Max-Age=600; SameSite=Lax`,
+      },
+    });
   }
 
-  // 2) OAuth callback: verify state, exchange code, list user's installations, render form
+  // 2) OAuth callback: verify state + browser nonce, exchange code, render form
   if (url.pathname === "/setup/callback" && request.method === "GET") {
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state") ?? "";
-    const [ts, sig] = state.split(".");
+    const [ts, nonce, sig] = state.split(".");
+    const cookieNonce = getCookie(request, "alphapr_setup_nonce");
 
-    if (!code || !ts || !sig || !(await hmacVerify(ts, sig, env.SETUP_SIGNING_SECRET))) {
+    if (
+      !code || !ts || !nonce || !sig ||
+      !(await hmacVerify(`${ts}.${nonce}`, sig, env.SETUP_SIGNING_SECRET))
+    ) {
       return html(`<p class="err">Invalid or missing OAuth state. <a href="/setup">Start over</a>.</p>`, 400);
+    }
+    if (!cookieNonce || cookieNonce !== nonce) {
+      return html(`<p class="err">This link wasn't started from your browser. <a href="/setup">Start over</a>.</p>`, 400);
     }
     if (Date.now() - parseInt(ts, 10) > 10 * 60 * 1000) {
       return html(`<p class="err">This link expired. <a href="/setup">Start over</a>.</p>`, 400);
@@ -75,7 +109,13 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
         code,
       }),
     });
-    const tokenData = (await tokenRes.json()) as { access_token?: string };
+
+    let tokenData: { access_token?: string };
+    try {
+      tokenData = (await tokenRes.json()) as { access_token?: string };
+    } catch {
+      return html(`<p class="err">Failed to parse GitHub's response. <a href="/setup">Try again</a>.</p>`, 502);
+    }
     if (!tokenData.access_token) {
       return html(`<p class="err">GitHub authorization failed. <a href="/setup">Try again</a>.</p>`, 400);
     }
@@ -101,10 +141,12 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
       );
     }
 
-    // Signed form token: the installation IDs this user may configure + expiry
-    const allowedIds = instData.installations.map((i) => i.id).join(",");
+    // Signed form token carrying id:login pairs + expiry
+    const allowedPairs = instData.installations
+      .map((i) => `${i.id}:${i.account.login}`)
+      .join(",");
     const exp = (Date.now() + 10 * 60 * 1000).toString();
-    const payload = `${allowedIds}|${exp}`;
+    const payload = `${allowedPairs}|${exp}`;
     const formToken = `${payload}.${await hmacSign(payload, env.SETUP_SIGNING_SECRET)}`;
 
     const options = instData.installations
@@ -127,7 +169,7 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
     `);
   }
 
-  // 3) Save: verify form token, encrypt, store
+  // 3) Save: verify form token, resolve login, encrypt, store
   if (url.pathname === "/setup/save" && request.method === "POST") {
     const form = await request.formData();
     const installationId = parseInt(String(form.get("installationId") ?? ""), 10);
@@ -143,11 +185,21 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
       return html(`<p class="err">Invalid form token. <a href="/setup">Start over</a>.</p>`, 400);
     }
 
-    const [allowedIds, exp] = payload.split("|");
+    const [allowedPairs, exp] = payload.split("|");
     if (Date.now() > parseInt(exp, 10)) {
       return html(`<p class="err">This form expired. <a href="/setup">Start over</a>.</p>`, 400);
     }
-    if (!allowedIds.split(",").map(Number).includes(installationId)) {
+
+    // Resolve the login for the chosen installation from the signed pairs
+    const match = allowedPairs
+      .split(",")
+      .map((pair) => {
+        const idx = pair.indexOf(":");
+        return { id: parseInt(pair.slice(0, idx), 10), login: pair.slice(idx + 1) };
+      })
+      .find((p) => p.id === installationId);
+
+    if (!match) {
       return html(`<p class="err">You don't have access to that installation.</p>`, 403);
     }
     if (!apiKey || !model) {
@@ -157,15 +209,17 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
     const encrypted = await encryptSecret(apiKey, env.KEY_ENCRYPTION_SECRET);
     await env.DB.prepare(
       `INSERT INTO installations (installation_id, account_login, api_key_encrypted, model)
-       VALUES (?, 'pending-webhook', ?, ?)
+       VALUES (?, ?, ?, ?)
        ON CONFLICT(installation_id)
-       DO UPDATE SET api_key_encrypted = excluded.api_key_encrypted, model = excluded.model`
+       DO UPDATE SET account_login = excluded.account_login,
+                     api_key_encrypted = excluded.api_key_encrypted,
+                     model = excluded.model`
     )
-      .bind(installationId, encrypted, model)
+      .bind(installationId, match.login, encrypted, model)
       .run();
 
     return html(
-      `<h2>✅ Saved</h2><p>AlphaPR is configured for installation <strong>${installationId}</strong>. Open or update a PR to trigger a review.</p>`
+      `<h2>✅ Saved</h2><p>AlphaPR is configured for <strong>${match.login}</strong> (installation ${installationId}). Open or update a PR to trigger a review.</p>`
     );
   }
 
