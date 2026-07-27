@@ -170,27 +170,35 @@ export default {
             const token = await getInstallationToken(jwt, body.installationId);
 
             if (body.statusCommentId !== null) {
-              await editComment(
-                token,
-                body.owner,
-                body.repo,
-                body.statusCommentId,
-                isPermanent
-                  ? "⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration."
-                  : "⚠️ **AlphaPR review failed.** Retrying automatically…"
-              );
+              try {
+                await editComment(
+                  token,
+                  body.owner,
+                  body.repo,
+                  body.statusCommentId,
+                  isPermanent
+                    ? "⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration."
+                    : "⚠️ **AlphaPR review failed.** Retrying automatically…"
+                );
+              } catch {
+                /* fall through to the check-run update */
+              }
             }
 
             if (body.checkRunId !== null) {
-              await completeCheckRun(
-                token,
-                body.owner,
-                body.repo,
-                body.checkRunId,
-                isPermanent ? "failure" : "neutral",
-                "AlphaPR review failed",
-                isPermanent ? "This won't be retried." : "Retrying automatically…"
-              );
+              try {
+                await completeCheckRun(
+                  token,
+                  body.owner,
+                  body.repo,
+                  body.checkRunId,
+                  isPermanent ? "failure" : "neutral",
+                  "AlphaPR review failed",
+                  isPermanent ? "This won't be retried." : "Retrying automatically…"
+                );
+              } catch {
+                /* never let status-surfacing break the queue handler */
+              }
             }
           } catch {
             /* never let status-surfacing break the queue handler */

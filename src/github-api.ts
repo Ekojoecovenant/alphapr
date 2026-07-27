@@ -1,5 +1,31 @@
 import { PermanentError } from "./errors";
 
+async function githubApiCall(
+  token: string,
+  url: string,
+  init: RequestInit,
+  errorPrefix: string
+): Promise<Response> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "alphapr",
+      "Content-Type": "application/json",
+      ...(init.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const text = (await res.text()).slice(0, 300);
+    if (res.status === 404 || res.status === 403) {
+      throw new PermanentError(`${errorPrefix}: ${res.status} ${text}`);
+    }
+    throw new Error(`${errorPrefix}: ${res.status} ${text}`);
+  }
+  return res;
+}
+
 export async function postReviewComment(
   token: string,
   owner: string,
@@ -104,28 +130,20 @@ export async function createCheckRun(
   repo: string,
   headSha: string
 ): Promise<number> {
-  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/check-runs`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "User-Agent": "alphapr",
-      "Content-Type": "application/json",
+  const res = await githubApiCall(
+    token,
+    `https://api.github.com/repos/${owner}/${repo}/check-runs`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: "AlphaPR Review",
+        head_sha: headSha,
+        status: "in_progress",
+        started_at: new Date().toISOString(),
+      }),
     },
-    body: JSON.stringify({
-      name: "AlphaPR Review",
-      head_sha: headSha,
-      status: "in_progress",
-      started_at: new Date().toISOString(),
-    }),
-  });
-  if (!res.ok) {
-    const text = (await res.text()).slice(0, 300);
-    if (res.status === 404 || res.status === 403) {
-      throw new PermanentError(`Failed to create check run: ${res.status} ${text}`);
-    }
-    throw new Error(`Failed to create check run: ${res.status} ${text}`);
-  }
+    "Failed to create check run"
+  );
   const data = (await res.json()) as { id: number };
   return data.id;
 }
@@ -141,29 +159,18 @@ export async function completeCheckRun(
   title: string,
   summary: string
 ): Promise<void> {
-  const res = await fetch(
+  await githubApiCall(
+    token,
     `https://api.github.com/repos/${owner}/${repo}/check-runs/${checkRunId}`,
     {
       method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "alphapr",
-        "Content-Type": "application/json",
-      },
       body: JSON.stringify({
         status: "completed",
         conclusion,
         completed_at: new Date().toISOString(),
         output: { title, summary },
       }),
-    }
+    },
+    "Failed to complete check run"
   );
-  if (!res.ok) {
-    const text = (await res.text()).slice(0, 300);
-    if (res.status === 404 || res.status === 403) {
-      throw new PermanentError(`Failed to complete check run: ${res.status} ${text}`);
-    }
-    throw new Error(`Failed to complete check run: ${res.status} ${text}`);
-  }
 }
