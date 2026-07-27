@@ -75,7 +75,8 @@ function parseReviewJson(text: string): ReviewResult | null {
           severity: f.severity as Severity,
           title: f.title,
           body: f.body,
-          suggestion: typeof f.suggestion === "string" && f.suggestion.trim() ? f.suggestion : undefined,
+          suggestion:
+            typeof f.suggestion === "string" && f.suggestion.trim() ? f.suggestion : undefined,
         });
       }
     }
@@ -119,7 +120,7 @@ ${annotatedDiff}`,
     },
     body: JSON.stringify({
       model: config.model,
-      max_tokens: 2000,
+      max_tokens: 4000,
       provider: { sort: "throughput" },
       messages: [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages],
     }),
@@ -129,10 +130,16 @@ ${annotatedDiff}`,
     throw new Error(`OpenRouter error: ${res.status} ${(await res.text()).slice(0, 300)}`);
   }
 
-  const data = (await res.json()) as { choices: { message: { content: string } }[] };
-  const content = data.choices[0]?.message?.content;
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string }; finish_reason?: string }[];
+    error?: unknown;
+  };
+
+  const content = data.choices?.[0]?.message?.content;
   if (!content) {
-    throw new Error("OpenRouter response contained no choices");
+    throw new Error(
+      `OpenRouter returned no content. finish_reason=${data.choices?.[0]?.finish_reason ?? "n/a"} body=${JSON.stringify(data).slice(0, 500)}`
+    );
   }
 
   const parsed = parseReviewJson(content);

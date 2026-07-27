@@ -1,16 +1,4 @@
-import { PermanentError } from './errors';
-
-// INTERFACES AND ENUMS
-
-export interface ReviewCommentInput {
-  path: string;
-  line: number;
-  side: "RIGHT";
-  body: string;
-}
-
-
-// FUNCTIONS
+import { PermanentError } from "./errors";
 
 export async function postReviewComment(
   token: string,
@@ -68,9 +56,15 @@ export async function editComment(
     if (res.status === 404) {
       throw new PermanentError(`Failed to edit comment ${commentId}: ${res.status} ${text}`);
     }
-
     throw new Error(`Failed to edit comment ${commentId}: ${res.status} ${text}`);
   }
+}
+
+export interface ReviewCommentInput {
+  path: string;
+  line: number;
+  side: "RIGHT";
+  body: string;
 }
 
 export async function createReview(

@@ -1,7 +1,7 @@
-import type { Finding, ReviewResult } from "./llm";
+import type { Finding, ReviewResult, Severity } from "./llm";
 
-const EMOJI: Record<string, string> = { major: "🔴", minor: "🟡", nit: "🟢" };
-const ORDER: Record<string, number> = { major: 0, minor: 1, nit: 2 };
+const EMOJI: Record<Severity, string> = { major: "🔴", minor: "🟡", nit: "🟢" };
+const ORDER: Record<Severity, number> = { major: 0, minor: 1, nit: 2 };
 
 function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -42,7 +42,8 @@ export function renderSummary(
     out += `\n\n💬 ${anchoredCount} inline comment${anchoredCount === 1 ? "" : "s"} posted on the changed files.`;
   }
   if (unanchored.length > 0) {
-    out += `\n\n---\n\n` + sortFindings(unanchored).map(renderSummaryFinding).join("\n\n---\n\n");
+    out +=
+      `\n\n---\n\n` + sortFindings(unanchored).map(renderSummaryFinding).join("\n\n---\n\n");
   }
   return out;
 }
@@ -52,7 +53,8 @@ export function renderForMemory(result: ReviewResult): string {
   if (result.raw) return result.raw;
   let out = `**Verdict:** ${result.verdict}`;
   if (result.findings.length > 0) {
-    out += `\n\n` + sortFindings(result.findings).map(renderSummaryFinding).join("\n\n---\n\n");
+    out +=
+      `\n\n` + sortFindings(result.findings).map(renderSummaryFinding).join("\n\n---\n\n");
   }
   return out;
 }

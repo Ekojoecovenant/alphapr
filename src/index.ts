@@ -5,15 +5,25 @@ import {
   deleteInstallation,
   getInstallation,
 } from "./db";
-import { postReviewComment, editComment, ReviewCommentInput, createReview } from "./github-api";
+import {
+  postReviewComment,
+  editComment,
+  createReview,
+  type ReviewCommentInput,
+} from "./github-api";
 import { createAppJWT, getInstallationToken } from "./github-auth";
-import { reviewDiff } from "./llm";
+import { reviewDiff, type Finding } from "./llm";
+import { parseDiff } from "./diff";
+import {
+  renderAnchoredComment,
+  renderSummary,
+  renderForMemory,
+  sortFindings,
+} from "./render";
 import { verifySignature } from "./verify";
 import { decryptSecret } from "./crypto";
 import { PermanentError } from "./errors";
-import { handleSetup } from './setup';
-import { renderAnchoredComment, renderForMemory, renderSummary, sortFindings } from './render';
-import { parseDiff } from './diff';
+import { handleSetup } from "./setup";
 
 interface ReviewJob {
   installationId: number;
@@ -28,12 +38,13 @@ interface ReviewJob {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // Self-serve setup routes (own auth: OAuth + signed tokens)
     const setupResponse = await handleSetup(request, env);
     if (setupResponse) return setupResponse;
 
     if (request.method !== "POST") {
       return new Response("AlphaPR is alive", { status: 200 });
-    } 
+    }
 
     const rawBody = await request.text();
 
@@ -93,7 +104,9 @@ export default {
           "🔍 **AlphaPR is reviewing this PR…**"
         );
       } catch (err) {
-        console.error("Failed to post status comment (continuing anyway):", err);
+        console.error(
+          `Failed to post status comment (continuing anyway): ${err instanceof Error ? err.message : err}`
+        );
       }
 
       const job: ReviewJob = {
@@ -119,15 +132,15 @@ export default {
         message.ack();
       } catch (err) {
         const isPermanent = err instanceof PermanentError;
+        const errMsg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
 
         if (isPermanent) {
-          console.error(`Permanent failure, not retrying:`, err);
+          console.error(`Permanent failure, not retrying: ${errMsg}`);
         } else {
-          console.error(`Review job failed (attempt ${message.attempts}):`, err);
+          console.error(`Review job failed (attempt ${message.attempts}): ${errMsg}`);
         }
 
         // Best-effort: surface the failure on the PR via the status comment.
-        // Wrapped so a failed edit can never mask or break the queue handling.
         if (message.body.statusCommentId !== null) {
           try {
             const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
@@ -183,11 +196,20 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     model = "deepseek/deepseek-v4-pro";
   } else {
     // Installed but unconfigured — inform once, don't fail
-    const setupMessage = `⚙️ **AlphaPR is installed but not configured yet.**\n\nAn OpenRouter API key is needed for this installation. See the [setup guide](https://github.com/Ekojoecovenant/alphapr#self-hosting) or contact the person who installed AlphaPR. Once configured, close and re-open this PR to trigger a review.`;
+    const setupMessage = `⚙️ **AlphaPR is installed but not configured yet.**\n\nAn OpenRouter API key is needed for this installation. Configure it at https://alphapr.covenantekojoe.workers.dev/setup — once configured, close and re-open this PR to trigger a review.`;
 
     if (job.statusCommentId !== null) {
-      // Edit the "reviewing..." placeholder so it doesn't strand forever
-      await editComment(token, job.owner, job.repo, job.statusCommentId, setupMessage);
+      if (job.action === "opened") {
+        await editComment(token, job.owner, job.repo, job.statusCommentId, setupMessage);
+      } else {
+        await editComment(
+          token,
+          job.owner,
+          job.repo,
+          job.statusCommentId,
+          "⚙️ Not configured — see setup instructions above."
+        );
+      }
     } else if (job.action === "opened") {
       await postReviewComment(token, job.owner, job.repo, job.prNumber, setupMessage);
     }
@@ -250,15 +272,13 @@ async function handlePREvent(job: ReviewJob, env: Env) {
   );
 
   // Split findings into anchorable vs not, validated against the real diff
-  const anchored: typeof result.findings = [];
-  const unanchored: typeof result.findings = [];
+  const anchored: Finding[] = [];
+  const unanchored: Finding[] = [];
   for (const f of result.findings) {
     if (parsed.validLines.get(f.path)?.has(f.line)) {
       anchored.push(f);
     } else {
-      if (result.findings.length > 0) {
-        console.log(`Unanchorable finding: ${f.path}:${f.line} (not in diff)`);
-      }
+      console.log(`Unanchorable finding: ${f.path}:${f.line} (not in diff)`);
       unanchored.push(f);
     }
   }
@@ -276,24 +296,35 @@ async function handlePREvent(job: ReviewJob, env: Env) {
       await createReview(token, job.owner, job.repo, job.prNumber, result.verdict, comments);
       anchoredCount = anchored.length;
     } catch (err) {
-      console.error("createReview failed; demoting anchored findings to summary:", err);
+      console.error(
+        `createReview failed; demoting anchored findings to summary: ${err instanceof Error ? err.message : err}`
+      );
       unanchored.push(...anchored);
     }
   }
 
-  // Status comment morphs into the verdict + summary of anything unanchorable
+  // Status comment morphs into the verdict + summary of anything unanchorable.
+  // Best-effort: inline comments may already be posted — a failure here must not retry the LLM run.
   const summary = renderSummary(result, anchoredCount, unanchored);
-  if (job.statusCommentId !== null) {
-    await editComment(token, job.owner, job.repo, job.statusCommentId, summary);
-  } else {
-    await postReviewComment(token, job.owner, job.repo, job.prNumber, summary);
+  try {
+    if (job.statusCommentId !== null) {
+      await editComment(token, job.owner, job.repo, job.statusCommentId, summary);
+    } else {
+      await postReviewComment(token, job.owner, job.repo, job.prNumber, summary);
+    }
+  } catch (err) {
+    console.error(
+      `Failed to post/edit summary (inline comments may already be posted): ${err instanceof Error ? err.message : err}`
+    );
   }
 
   // Memory stores the FULL review (all findings) regardless of where they were posted
   try {
     await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, renderForMemory(result));
   } catch (err) {
-    console.error("Failed to save review state (comments already posted):", err);
+    console.error(
+      `Failed to save review state (comments already posted): ${err instanceof Error ? err.message : err}`
+    );
   }
   console.log(
     `✅ Posted ${usedIncremental ? "incremental" : "full"} review on PR #${job.prNumber} (${anchoredCount} inline, ${unanchored.length} in summary)`

@@ -42,8 +42,14 @@ export function parseDiff(diff: string): ParsedDiff {
       newLine++;
     } else if (line.startsWith("-")) {
       out.push(line); // removed lines have no new-file number
+    } else if (line.startsWith("\\")) {
+      // "\ No newline at end of file" — metadata, not content
+      out.push(line);
+    } else if (line === "") {
+      // trailing artifact from split("\n") — don't number, don't anchor
+      out.push(line);
     } else {
-      // context line — anchorable and numbered
+      // genuine context line (starts with a space, or blank-in-hunk) — anchorable and numbered
       validLines.get(currentPath)!.add(newLine);
       out.push(`${newLine}: ${line}`);
       newLine++;
