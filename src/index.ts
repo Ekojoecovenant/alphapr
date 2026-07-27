@@ -247,6 +247,13 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     await postReviewComment(token, job.owner, job.repo, job.prNumber, review);
   }
 
-  await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, review);
+  try {
+    await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, review);
+  } catch (err) {
+    // Verdict is already visible; a state-save failure must not trigger a retry
+    // that overwrites it and re-runs the LLM.
+    console.error("Failed to save review state (comment already posted):", err);
+  }
+  
   console.log(`✅ Posted ${usedIncremental ? "incremental" : "full"} review on PR #${job.prNumber}`);
 }
