@@ -180,8 +180,8 @@ export default {
                     ? "⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration."
                     : "⚠️ **AlphaPR review failed.** Retrying automatically…"
                 );
-} catch (e) { console.warn('Failed to update comment, continuing to check-run:', e); }
-                /* fall through to the check-run update */
+              } catch (e) {
+                console.warn('Failed to update comment, continuing to check-run:', e);
               }
             }
 

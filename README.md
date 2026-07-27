@@ -13,6 +13,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **BYOK, encrypted** — every installation brings its own OpenRouter key, AES-GCM encrypted at rest, configured through an OAuth-verified setup page
 - **Live status** — a "🔍 Reviewing…" comment appears instantly and morphs into the verdict (or a failure notice — no silent deaths)
 - **Self-healing** — force-pushes that erase the remembered commit are detected and recovered automatically
+- **Checks integration** — a review check run in the PR's checks list, in-progress → concluded, so AlphaPR shows up like any CI step (and can gate merges if you make it required)
 
 ## How it works
 
@@ -153,7 +154,6 @@ The model is set per installation on the setup page (any model available on Open
 
 ## Roadmap
 
-- **Checks API integration** — review status in the PR checks list, pending → complete like CI
 - **Per-repo configuration** — model, severity thresholds, and review style per installation
 - **Free-tier mode** — a no-queue path (fast models only) so self-hosters can run on Cloudflare's free plan
 - **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis
