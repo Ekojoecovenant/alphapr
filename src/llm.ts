@@ -125,11 +125,22 @@ function parseReviewJson(text: string): ReviewResult | null {
   return null;
 }
 
+export interface ReviewConfig {
+  apiKey: string;
+  model: string;
+  reviewTone: "thorough" | "concise";
+}
+
 export async function reviewDiff(
   annotatedDiff: string,
-  config: { apiKey: string; model: string },
+  config: ReviewConfig,
   previousReview?: string
 ): Promise<ReviewResult> {
+  const toneInstruction =
+    config.reviewTone === "concise"
+      ? "\n\nTONE: Be concise. Maximum 3 findings. Keep each body to one sentence."
+      : "\n\nTONE: Be thorough. Maximum 5 findings. Explain each finding's consequence fully.";
+
   const userMessages: { role: string; content: string }[] = [];
 
   if (previousReview) {
@@ -162,7 +173,10 @@ ${annotatedDiff}`,
       max_tokens: 8000,
       reasoning: { max_tokens: 2000 },
       provider: { sort: "throughput" },
-      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages],
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT + toneInstruction },
+        ...userMessages,
+      ],
     }),
   });
 
@@ -189,7 +203,6 @@ ${annotatedDiff}`,
   const parsed = parseReviewJson(content);
   if (parsed) return parsed;
 
-  // Graceful degradation: model ignored the JSON contract — fall back to raw text
   console.log("Review output was not valid JSON; falling back to raw text");
   return { verdict: "", findings: [], raw: content.trim() };
 }

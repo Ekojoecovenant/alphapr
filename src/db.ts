@@ -5,6 +5,9 @@ export interface InstallationConfig {
   account_login: string;
   api_key_encrypted: string | null;
   model: string;
+  severity_threshold: string;
+  review_tone: string;
+  ignore_paths: string;
 }
 
 
@@ -72,7 +75,8 @@ export async function getInstallation(
 ): Promise<InstallationConfig | null> {
   const row = await db
     .prepare(
-      `SELECT installation_id, account_login, api_key_encrypted, model
+      `SELECT installation_id, account_login, api_key_encrypted, model,
+              severity_threshold, review_tone, ignore_paths
        FROM installations WHERE installation_id = ?`
     )
     .bind(installationId)

@@ -41,12 +41,22 @@ function getCookie(request: Request, name: string): string | null {
   return null;
 }
 
+function esc(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function html(body: string, status = 200): Response {
   return new Response(
     `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AlphaPR Setup</title>
 <style>body{font-family:system-ui;max-width:560px;margin:60px auto;padding:0 20px;color:#222}
-input,select{width:100%;padding:8px;margin:6px 0 16px;box-sizing:border-box}
-button{padding:10px 24px;background:#1a7f37;color:#fff;border:0;border-radius:6px;cursor:pointer}
+label{display:block;margin-top:16px;font-weight:600;font-size:14px}
+.hint{font-weight:400;color:#666;font-size:12px;margin:2px 0 0}
+input,select{width:100%;padding:8px;margin:6px 0;box-sizing:border-box}
+button{margin-top:20px;padding:10px 24px;background:#1a7f37;color:#fff;border:0;border-radius:6px;cursor:pointer}
 .err{color:#b32020}</style></head><body>${body}</body></html>`,
     { status, headers: { "Content-Type": "text/html; charset=utf-8" } }
   );
@@ -69,7 +79,6 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
     redirect.searchParams.set("redirect_uri", `${url.origin}/setup/callback`);
     redirect.searchParams.set("state", state);
 
-    // Manual 302 so we can attach the nonce cookie (Response.redirect can't take headers)
     return new Response(null, {
       status: 302,
       headers: {
@@ -79,7 +88,7 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
     });
   }
 
-  // 2) OAuth callback: verify state + browser nonce, exchange code, render form
+  // 2) OAuth callback: verify state + nonce, exchange code, render form
   if (url.pathname === "/setup/callback" && request.method === "GET") {
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state") ?? "";
@@ -99,7 +108,6 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
       return html(`<p class="err">This link expired. <a href="/setup">Start over</a>.</p>`, 400);
     }
 
-    // Exchange the code for a user access token
     const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -120,7 +128,6 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
       return html(`<p class="err">GitHub authorization failed. <a href="/setup">Try again</a>.</p>`, 400);
     }
 
-    // Which installations does this user actually have access to?
     const instRes = await fetch("https://api.github.com/user/installations", {
       headers: {
         Authorization: `Bearer ${tokenData.access_token}`,
@@ -141,7 +148,6 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
       );
     }
 
-    // Signed form token carrying id:login pairs + expiry
     const allowedPairs = instData.installations
       .map((i) => `${i.id}:${i.account.login}`)
       .join(",");
@@ -150,31 +156,61 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
     const formToken = `${payload}.${await hmacSign(payload, env.SETUP_SIGNING_SECRET)}`;
 
     const options = instData.installations
-      .map((i) => `<option value="${i.id}">${i.account.login} (${i.id})</option>`)
+      .map((i) => `<option value="${i.id}">${esc(i.account.login)} (${i.id})</option>`)
       .join("");
 
     return html(`
       <h2>Configure AlphaPR</h2>
       <form method="POST" action="/setup/save">
-        <label>Installation</label>
-        <select name="installationId">${options}</select>
-        <label>OpenRouter API key</label>
-        <input name="apiKey" type="password" placeholder="sk-or-..." required>
-        <label>Model (any OpenRouter model)</label>
-        <input name="model" type="text" value="deepseek/deepseek-v4-pro" required>
+        <label>Installation
+          <select name="installationId">${options}</select>
+        </label>
+
+        <label>OpenRouter API key
+          <input name="apiKey" type="password" placeholder="Leave blank to keep your existing key">
+          <p class="hint">Required on first setup. Leave blank when editing settings to keep your current key.</p>
+        </label>
+
+        <label>Model
+          <input name="model" type="text" value="deepseek/deepseek-v4-flash">
+          <p class="hint">Any OpenRouter model. Fast, non-reasoning models recommended.</p>
+        </label>
+
+        <label>Severity threshold
+          <select name="severityThreshold">
+            <option value="all">All (major, minor, nits)</option>
+            <option value="minor">Minor and above</option>
+            <option value="major">Major only</option>
+          </select>
+        </label>
+
+        <label>Review tone
+          <select name="reviewTone">
+            <option value="thorough">Thorough</option>
+            <option value="concise">Concise</option>
+          </select>
+        </label>
+
+        <label>Ignore paths
+          <input name="ignorePaths" type="text" placeholder="dist/,*.lock,*.min.js">
+          <p class="hint">Comma-separated. Supports "dir/" prefixes and "*.ext" suffixes.</p>
+        </label>
+
         <input type="hidden" name="token" value="${formToken}">
         <button type="submit">Save configuration</button>
       </form>
-      <p style="color:#666;font-size:13px">Your key is encrypted (AES-GCM) before storage and only used to review PRs on this installation's repositories.</p>
     `);
   }
 
-  // 3) Save: verify form token, resolve login, encrypt, store
+  // 3) Save: verify token, resolve login, conditionally update key, store config
   if (url.pathname === "/setup/save" && request.method === "POST") {
     const form = await request.formData();
     const installationId = parseInt(String(form.get("installationId") ?? ""), 10);
     const apiKey = String(form.get("apiKey") ?? "").trim();
     const model = String(form.get("model") ?? "").trim();
+    const severityThreshold = String(form.get("severityThreshold") ?? "all");
+    const reviewTone = String(form.get("reviewTone") ?? "thorough");
+    const ignorePaths = String(form.get("ignorePaths") ?? "").trim();
     const token = String(form.get("token") ?? "");
 
     const lastDot = token.lastIndexOf(".");
@@ -190,7 +226,6 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
       return html(`<p class="err">This form expired. <a href="/setup">Start over</a>.</p>`, 400);
     }
 
-    // Resolve the login for the chosen installation from the signed pairs
     const match = allowedPairs
       .split(",")
       .map((pair) => {
@@ -202,24 +237,62 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
     if (!match) {
       return html(`<p class="err">You don't have access to that installation.</p>`, 403);
     }
-    if (!apiKey || !model) {
-      return html(`<p class="err">API key and model are required. <a href="/setup">Start over</a>.</p>`, 400);
+    if (!model) {
+      return html(`<p class="err">Model is required. <a href="/setup">Start over</a>.</p>`, 400);
+    }
+    if (!["all", "minor", "major"].includes(severityThreshold)) {
+      return html(`<p class="err">Invalid severity threshold.</p>`, 400);
+    }
+    if (!["thorough", "concise"].includes(reviewTone)) {
+      return html(`<p class="err">Invalid review tone.</p>`, 400);
     }
 
-    const encrypted = await encryptSecret(apiKey, env.KEY_ENCRYPTION_SECRET);
-    await env.DB.prepare(
-      `INSERT INTO installations (installation_id, account_login, api_key_encrypted, model)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(installation_id)
-       DO UPDATE SET account_login = excluded.account_login,
-                     api_key_encrypted = excluded.api_key_encrypted,
-                     model = excluded.model`
+    // Does this installation already have a key?
+    const existing = await env.DB.prepare(
+      `SELECT api_key_encrypted FROM installations WHERE installation_id = ?`
     )
-      .bind(installationId, match.login, encrypted, model)
-      .run();
+      .bind(installationId)
+      .first<{ api_key_encrypted: string | null }>();
+
+    const hasExistingKey = !!existing?.api_key_encrypted;
+
+    if (!apiKey && !hasExistingKey) {
+      return html(
+        `<p class="err">An API key is required for first-time setup. <a href="/setup">Start over</a>.</p>`,
+        400
+      );
+    }
+
+    if (apiKey) {
+      // New or replacement key provided — encrypt and store it
+      const encrypted = await encryptSecret(apiKey, env.KEY_ENCRYPTION_SECRET);
+      await env.DB.prepare(
+        `INSERT INTO installations
+           (installation_id, account_login, api_key_encrypted, model, severity_threshold, review_tone, ignore_paths)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(installation_id) DO UPDATE SET
+           account_login = excluded.account_login,
+           api_key_encrypted = excluded.api_key_encrypted,
+           model = excluded.model,
+           severity_threshold = excluded.severity_threshold,
+           review_tone = excluded.review_tone,
+           ignore_paths = excluded.ignore_paths`
+      )
+        .bind(installationId, match.login, encrypted, model, severityThreshold, reviewTone, ignorePaths)
+        .run();
+    } else {
+      // No new key — update config only, leave api_key_encrypted untouched
+      await env.DB.prepare(
+        `UPDATE installations SET
+           account_login = ?, model = ?, severity_threshold = ?, review_tone = ?, ignore_paths = ?
+         WHERE installation_id = ?`
+      )
+        .bind(match.login, model, severityThreshold, reviewTone, ignorePaths, installationId)
+        .run();
+    }
 
     return html(
-      `<h2>✅ Saved</h2><p>AlphaPR is configured for <strong>${match.login}</strong> (installation ${installationId}). Open or update a PR to trigger a review.</p>`
+      `<h2>✅ Saved</h2><p>AlphaPR is configured for <strong>${esc(match.login)}</strong> (installation ${installationId}). Open or update a PR to trigger a review.</p>`
     );
   }
 

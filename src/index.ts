@@ -225,6 +225,10 @@ async function handlePREvent(job: ReviewJob, env: Env) {
   let apiKey: string;
   let model: string;
 
+  let reviewTone: "thorough" | "concise" = "thorough";
+  let severityThreshold = "all";
+  let ignorePaths: string[] = [];
+
   if (installation?.api_key_encrypted) {
     try {
       apiKey = await decryptSecret(installation.api_key_encrypted, env.KEY_ENCRYPTION_SECRET);
@@ -235,7 +239,11 @@ async function handlePREvent(job: ReviewJob, env: Env) {
         }`
       );
     }
+
     model = installation.model;
+    reviewTone = (installation.review_tone === "concise" ? "concise" : "thorough");
+    severityThreshold = installation.severity_threshold;
+    ignorePaths = installation.ignore_paths ? installation.ignore_paths.split(",") : [];
   } else if (job.owner === env.FALLBACK_OWNER) {
     // Owner fallback: my own installs use the env key
     apiKey = env.OPENROUTER_API_KEY;
@@ -321,13 +329,19 @@ async function handlePREvent(job: ReviewJob, env: Env) {
   }
 
   // Parse + annotate the diff so the model gets real line numbers
-  const parsed = parseDiff(diff);
+  const parsed = parseDiff(diff, ignorePaths);
 
   const result = await reviewDiff(
     parsed.annotated,
-    { apiKey, model },
+    { apiKey, model, reviewTone },
     usedIncremental ? state!.last_review_body ?? undefined : undefined
   );
+
+  // Apply severity threshold BEFORE anything counts it (anchoring, check conclusion)
+  const rank: Record<string, number> = { major: 0, minor: 1, nit: 2 };
+  const thresholdRank =
+    severityThreshold === "major" ? 0 : severityThreshold === "minor" ? 1 : 2;
+  result.findings = result.findings.filter((f) => rank[f.severity] <= thresholdRank);
 
   // Split findings into anchorable vs not, validated against the real diff
   const anchored: Finding[] = [];
