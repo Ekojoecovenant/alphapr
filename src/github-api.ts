@@ -10,7 +10,15 @@ export interface ReviewCommentInput {
 }
 
 
-// FUNCTIONS
+/**
+ * Posts a comment to a GitHub pull request.
+ *
+ * @param owner - The GitHub repository owner
+ * @param repo - The GitHub repository name
+ * @param prNumber - The pull request number
+ * @param body - The comment text
+ * @returns The ID of the created comment
+ */
 
 export async function postReviewComment(
   token: string,
@@ -43,6 +51,14 @@ export async function postReviewComment(
   return data.id;
 }
 
+/**
+ * Updates the body of an existing GitHub issue comment.
+ *
+ * @param commentId - The identifier of the comment to update
+ * @param body - The new comment body
+ * @throws PermanentError If the comment is not found
+ * @throws Error If the update request fails
+ */
 export async function editComment(
   token: string,
   owner: string,
@@ -73,6 +89,13 @@ export async function editComment(
   }
 }
 
+/**
+ * Creates a pull request review with a comment and inline review comments.
+ *
+ * @param prNumber - The pull request number.
+ * @param body - The review summary.
+ * @param comments - The inline comments to include in the review.
+ */
 export async function createReview(
   token: string,
   owner: string,

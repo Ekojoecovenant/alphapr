@@ -156,6 +156,11 @@ export default {
   },
 };
 
+/**
+ * Reviews a pull request and publishes inline findings and a summary comment.
+ *
+ * @param job - The pull request review job and its installation context
+ */
 async function handlePREvent(job: ReviewJob, env: Env) {
   const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
   const token = await getInstallationToken(jwt, job.installationId);

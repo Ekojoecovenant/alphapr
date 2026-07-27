@@ -46,6 +46,12 @@ RULES:
 
 const VALID_SEVERITIES = new Set<string>(["major", "minor", "nit"]);
 
+/**
+ * Parses and validates a structured review response from model output.
+ *
+ * @param text - The model output containing a review JSON object, optionally wrapped in Markdown code fences
+ * @returns A validated review result with up to five findings, or `null` if the output is invalid
+ */
 function parseReviewJson(text: string): ReviewResult | null {
   // Tolerate models that wrap output in fences despite instructions
   const cleaned = text
@@ -85,6 +91,14 @@ function parseReviewJson(text: string): ReviewResult | null {
   }
 }
 
+/**
+ * Reviews an annotated pull request diff and produces structured findings.
+ *
+ * @param annotatedDiff - The diff to review.
+ * @param previousReview - An earlier review whose findings should not be repeated.
+ * @returns The review verdict and findings, with raw model output when structured parsing fails.
+ * @throws If the review service returns an unsuccessful response or no usable review content.
+ */
 export async function reviewDiff(
   annotatedDiff: string,
   config: { apiKey: string; model: string },

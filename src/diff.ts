@@ -5,6 +5,12 @@ export interface ParsedDiff {
   annotated: string;
 }
 
+/**
+ * Parses a unified Git diff and annotates new-file and context lines with their line numbers.
+ *
+ * @param diff - The unified Git diff text to parse
+ * @returns The anchorable new-file line numbers grouped by file path and the annotated diff text
+ */
 export function parseDiff(diff: string): ParsedDiff {
   const validLines = new Map<string, Set<number>>();
   const out: string[] = [];
