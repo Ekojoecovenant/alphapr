@@ -1,4 +1,4 @@
-import { PermanentError } from './errors';
+import { PermanentError } from "./errors";
 
 export async function postReviewComment(
   token: string,
@@ -56,7 +56,44 @@ export async function editComment(
     if (res.status === 404) {
       throw new PermanentError(`Failed to edit comment ${commentId}: ${res.status} ${text}`);
     }
-
     throw new Error(`Failed to edit comment ${commentId}: ${res.status} ${text}`);
+  }
+}
+
+export interface ReviewCommentInput {
+  path: string;
+  line: number;
+  side: "RIGHT";
+  body: string;
+}
+
+export async function createReview(
+  token: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  commitId: string,
+  body: string,
+  comments: ReviewCommentInput[]
+): Promise<void> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "alphapr",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ commit_id: commitId, body, event: "COMMENT", comments }),
+    }
+  );
+  if (!res.ok) {
+    const text = (await res.text()).slice(0, 300);
+    if (res.status === 404) {
+      throw new PermanentError(`Failed to create review: ${res.status} ${text}`);
+    }
+    throw new Error(`Failed to create review: ${res.status} ${text}`);
   }
 }
