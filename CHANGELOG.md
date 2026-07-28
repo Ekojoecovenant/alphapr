@@ -3,6 +3,21 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v0.7.0] — 2026-07-28
+
+### Added
+
+- Per-installation configuration, editable on the setup page: model, severity threshold (all / minor+ / major-only), review tone (thorough / concise), and ignore-path globs
+- Ignored paths are filtered at the diff stage, so ignored files never reach the model — saving tokens and reducing noise
+- Severity threshold filters findings before anything counts them, so the check-run conclusion reflects the team's chosen threshold (a below-threshold finding leaves the check green)
+- Config can be edited without re-entering the API key — leave the key field blank to keep the existing one
+
+### Security
+
+- User-derived values (account login) are HTML-escaped before rendering into the setup form
+
+[v0.7.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v0.7.0
+
 ## [v0.6.0] — 2026-07-27
 
 ### Added
