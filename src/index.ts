@@ -225,6 +225,10 @@ async function handlePREvent(job: ReviewJob, env: Env) {
   let apiKey: string;
   let model: string;
 
+  let reviewTone: "thorough" | "concise" = "thorough";
+  let severityThreshold = "all";
+  let ignorePaths: string[] = [];
+
   if (installation?.api_key_encrypted) {
     try {
       apiKey = await decryptSecret(installation.api_key_encrypted, env.KEY_ENCRYPTION_SECRET);
@@ -235,7 +239,11 @@ async function handlePREvent(job: ReviewJob, env: Env) {
         }`
       );
     }
+
     model = installation.model;
+    reviewTone = (installation.review_tone === "concise" ? "concise" : "thorough");
+    severityThreshold = installation.severity_threshold;
+    ignorePaths = installation.ignore_paths ? installation.ignore_paths.split(",") : [];
   } else if (job.owner === env.FALLBACK_OWNER) {
     // Owner fallback: my own installs use the env key
     apiKey = env.OPENROUTER_API_KEY;
@@ -321,18 +329,38 @@ async function handlePREvent(job: ReviewJob, env: Env) {
   }
 
   // Parse + annotate the diff so the model gets real line numbers
-  const parsed = parseDiff(diff);
+  const parsed = parseDiff(diff, ignorePaths);
 
   const result = await reviewDiff(
     parsed.annotated,
-    { apiKey, model },
+    { apiKey, model, reviewTone },
     usedIncremental ? state!.last_review_body ?? undefined : undefined
   );
+
+  // Apply severity threshold for DISPLAY/CHECK only — never mutate result.findings,
+  // since renderForMemory needs the FULL set for accurate incremental review state.
+  const rank: Record<string, number> = { major: 0, minor: 1, nit: 2 };
+  const thresholdRank =
+    severityThreshold === "major" ? 0 : severityThreshold === "minor" ? 1 : 2;
+  const filteredFindings = result.findings.filter((f) => rank[f.severity] <= thresholdRank);
+
+  const verdict = result.raw
+    ? result.verdict
+    : (() => {
+        const majorCount = filteredFindings.filter((f) => f.severity === "major").length;
+        const minorCount = filteredFindings.filter((f) => f.severity === "minor").length;
+        const nitCount = filteredFindings.filter((f) => f.severity === "nit").length;
+        return filteredFindings.length === 0
+          ? "✅ LGTM — no issues found."
+          : `⚠️ ${filteredFindings.length} issues (${majorCount} major, ${minorCount} minor, ${nitCount} nits)`;
+      })();
+
+  const displayResult = { ...result, findings: filteredFindings, verdict };
 
   // Split findings into anchorable vs not, validated against the real diff
   const anchored: Finding[] = [];
   const unanchored: Finding[] = [];
-  for (const f of result.findings) {
+  for (const f of displayResult.findings) {
     if (parsed.validLines.get(f.path)?.has(f.line)) {
       anchored.push(f);
     } else {
@@ -357,7 +385,7 @@ async function handlePREvent(job: ReviewJob, env: Env) {
         job.repo,
         job.prNumber,
         job.headSha,
-        result.verdict,
+        displayResult.verdict,
         comments
       );
       anchoredCount = anchored.length;
@@ -369,9 +397,7 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     }
   }
 
-  // Status comment morphs into the verdict + summary of anything unanchorable.
-  // Best-effort: inline comments may already be posted — a failure here must not retry the LLM run.
-  const summary = renderSummary(result, anchoredCount, unanchored);
+  const summary = renderSummary(displayResult, anchoredCount, unanchored);
   try {
     if (job.statusCommentId !== null) {
       await editComment(token, job.owner, job.repo, job.statusCommentId, summary);
@@ -384,17 +410,18 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     );
   }
 
-  // Conclude the check run based on the review outcome.
+  // Conclude the check run based on the DISPLAYED (filtered) outcome —
+  // the check should reflect what the team asked to be shown, not the raw findings.
   if (job.checkRunId !== null) {
-    const hasMajor = result.findings.some((f) => f.severity === "major");
-    const conclusion: CheckConclusion = result.raw
+    const hasMajor = displayResult.findings.some((f) => f.severity === "major");
+    const conclusion: CheckConclusion = displayResult.raw
       ? "neutral"
       : hasMajor
         ? "action_required"
-        : result.findings.length > 0
+        : displayResult.findings.length > 0
           ? "neutral"
           : "success";
-    const title = result.raw ? "Review posted" : result.verdict;
+    const title = displayResult.raw ? "Review posted" : displayResult.verdict;
     try {
       await completeCheckRun(
         token,
@@ -410,7 +437,8 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     }
   }
 
-  // Memory stores the FULL review (all findings) regardless of where they were posted
+  // Memory stores the FULL, UNFILTERED review — so future incremental context
+  // knows about every point ever raised, regardless of what was shown this time.
   try {
     await saveReviewState(
       env.DB,
@@ -424,6 +452,7 @@ async function handlePREvent(job: ReviewJob, env: Env) {
       `Failed to save review state (comments already posted): ${err instanceof Error ? err.message : err}`
     );
   }
+  
   console.log(
     `✅ Posted ${usedIncremental ? "incremental" : "full"} review on PR #${job.prNumber} (${anchoredCount} inline, ${unanchored.length} in summary)`
   );

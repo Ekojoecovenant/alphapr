@@ -5,27 +5,52 @@ export interface ParsedDiff {
   annotated: string;
 }
 
-export function parseDiff(diff: string): ParsedDiff {
+/** Simple glob match: supports leading dir prefixes ("dist/") and "*.ext" suffixes. */
+function matchesIgnore(path: string, patterns: string[]): boolean {
+  for (const raw of patterns) {
+    const p = raw.trim();
+    if (!p) continue;
+    if (p.endsWith("/") && path.startsWith(p)) return true; // "dist/" prefix
+    if (p.startsWith("*.") && path.endsWith(p.slice(1))) return true; // "*.lock" suffix
+    if (path === p) return true; // exact
+  }
+  return false;
+}
+
+export function parseDiff(diff: string, ignorePaths: string[] = []): ParsedDiff {
   const validLines = new Map<string, Set<number>>();
   const out: string[] = [];
   let currentPath: string | null = null;
+  let ignoring = false;
   let newLine = 0;
+  let pendingMinusLine: string | null = null;
 
   for (const line of diff.split("\n")) {
     if (line.startsWith("diff --git")) {
       currentPath = null;
+      ignoring = false;
+      pendingMinusLine = null;
       out.push(line);
+      continue;
+    }
+    if (line.startsWith("--- ")) {
+      pendingMinusLine = line; // hold until we know if the file is ignored
       continue;
     }
     if (line.startsWith("+++ ")) {
-      // "+++ b/src/foo.ts" → "src/foo.ts"; "+++ /dev/null" → deleted file, skip
       currentPath = line.startsWith("+++ b/") ? line.slice(6) : null;
-      if (currentPath && !validLines.has(currentPath)) {
+      ignoring = currentPath ? matchesIgnore(currentPath, ignorePaths) : false;
+      if (currentPath && !ignoring && !validLines.has(currentPath)) {
         validLines.set(currentPath, new Set());
       }
-      out.push(line);
+      if (!ignoring) {
+        if (pendingMinusLine !== null) out.push(pendingMinusLine);
+        out.push(line);
+      }
+      pendingMinusLine = null;
       continue;
     }
+    if (ignoring) continue;
     if (line.startsWith("@@")) {
       const m = /\+(\d+)/.exec(line);
       newLine = m ? parseInt(m[1], 10) : 0;
@@ -41,15 +66,12 @@ export function parseDiff(diff: string): ParsedDiff {
       out.push(`${newLine}: ${line}`);
       newLine++;
     } else if (line.startsWith("-")) {
-      out.push(line); // removed lines have no new-file number
+      out.push(line);
     } else if (line.startsWith("\\")) {
-      // "\ No newline at end of file" — metadata, not content
       out.push(line);
     } else if (line === "") {
-      // trailing artifact from split("\n") — don't number, don't anchor
       out.push(line);
     } else {
-      // genuine context line (starts with a space, or blank-in-hunk) — anchorable and numbered
       validLines.get(currentPath)!.add(newLine);
       out.push(`${newLine}: ${line}`);
       newLine++;
