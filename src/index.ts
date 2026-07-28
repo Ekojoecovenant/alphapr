@@ -337,26 +337,30 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     usedIncremental ? state!.last_review_body ?? undefined : undefined
   );
 
-  // Apply severity threshold BEFORE anything counts it (anchoring, check conclusion)
+  // Apply severity threshold for DISPLAY/CHECK only — never mutate result.findings,
+  // since renderForMemory needs the FULL set for accurate incremental review state.
   const rank: Record<string, number> = { major: 0, minor: 1, nit: 2 };
   const thresholdRank =
     severityThreshold === "major" ? 0 : severityThreshold === "minor" ? 1 : 2;
-  result.findings = result.findings.filter((f) => rank[f.severity] <= thresholdRank);
+  const filteredFindings = result.findings.filter((f) => rank[f.severity] <= thresholdRank);
 
-  if (!result.raw) {
-    const majorCount = result.findings.filter((f) => f.severity === "major").length;
-    const minorCount = result.findings.filter((f) => f.severity === "minor").length;
-    const nitCount = result.findings.filter((f) => f.severity === "nit").length;
-    result.verdict =
-      result.findings.length === 0
-        ? "✅ LGTM — no issues found."
-        : `⚠️ ${result.findings.length} issues (${majorCount} major, ${minorCount} minor, ${nitCount} nits)`;
-  }
+  const verdict = result.raw
+    ? result.verdict
+    : (() => {
+        const majorCount = filteredFindings.filter((f) => f.severity === "major").length;
+        const minorCount = filteredFindings.filter((f) => f.severity === "minor").length;
+        const nitCount = filteredFindings.filter((f) => f.severity === "nit").length;
+        return filteredFindings.length === 0
+          ? "✅ LGTM — no issues found."
+          : `⚠️ ${filteredFindings.length} issues (${majorCount} major, ${minorCount} minor, ${nitCount} nits)`;
+      })();
+
+  const displayResult = { ...result, findings: filteredFindings, verdict };
 
   // Split findings into anchorable vs not, validated against the real diff
   const anchored: Finding[] = [];
   const unanchored: Finding[] = [];
-  for (const f of result.findings) {
+  for (const f of displayResult.findings) {
     if (parsed.validLines.get(f.path)?.has(f.line)) {
       anchored.push(f);
     } else {
@@ -381,7 +385,7 @@ async function handlePREvent(job: ReviewJob, env: Env) {
         job.repo,
         job.prNumber,
         job.headSha,
-        result.verdict,
+        displayResult.verdict,
         comments
       );
       anchoredCount = anchored.length;
@@ -393,9 +397,7 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     }
   }
 
-  // Status comment morphs into the verdict + summary of anything unanchorable.
-  // Best-effort: inline comments may already be posted — a failure here must not retry the LLM run.
-  const summary = renderSummary(result, anchoredCount, unanchored);
+  const summary = renderSummary(displayResult, anchoredCount, unanchored);
   try {
     if (job.statusCommentId !== null) {
       await editComment(token, job.owner, job.repo, job.statusCommentId, summary);
@@ -408,17 +410,18 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     );
   }
 
-  // Conclude the check run based on the review outcome.
+  // Conclude the check run based on the DISPLAYED (filtered) outcome —
+  // the check should reflect what the team asked to be shown, not the raw findings.
   if (job.checkRunId !== null) {
-    const hasMajor = result.findings.some((f) => f.severity === "major");
-    const conclusion: CheckConclusion = result.raw
+    const hasMajor = displayResult.findings.some((f) => f.severity === "major");
+    const conclusion: CheckConclusion = displayResult.raw
       ? "neutral"
       : hasMajor
         ? "action_required"
-        : result.findings.length > 0
+        : displayResult.findings.length > 0
           ? "neutral"
           : "success";
-    const title = result.raw ? "Review posted" : result.verdict;
+    const title = displayResult.raw ? "Review posted" : displayResult.verdict;
     try {
       await completeCheckRun(
         token,
@@ -434,7 +437,8 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     }
   }
 
-  // Memory stores the FULL review (all findings) regardless of where they were posted
+  // Memory stores the FULL, UNFILTERED review — so future incremental context
+  // knows about every point ever raised, regardless of what was shown this time.
   try {
     await saveReviewState(
       env.DB,
@@ -448,6 +452,7 @@ async function handlePREvent(job: ReviewJob, env: Env) {
       `Failed to save review state (comments already posted): ${err instanceof Error ? err.message : err}`
     );
   }
+  
   console.log(
     `✅ Posted ${usedIncremental ? "incremental" : "full"} review on PR #${job.prNumber} (${anchoredCount} inline, ${unanchored.length} in summary)`
   );
