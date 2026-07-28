@@ -6,3 +6,5 @@ ADD COLUMN review_tone TEXT NOT NULL DEFAULT 'thorough';
 
 ALTER TABLE installations
 ADD COLUMN ignore_paths TEXT NOT NULL DEFAULT '';
+
+---

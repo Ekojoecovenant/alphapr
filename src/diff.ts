@@ -23,12 +23,18 @@ export function parseDiff(diff: string, ignorePaths: string[] = []): ParsedDiff 
   let currentPath: string | null = null;
   let ignoring = false;
   let newLine = 0;
+  let pendingMinusLine: string | null = null;
 
   for (const line of diff.split("\n")) {
     if (line.startsWith("diff --git")) {
       currentPath = null;
       ignoring = false;
+      pendingMinusLine = null;
       out.push(line);
+      continue;
+    }
+    if (line.startsWith("--- ")) {
+      pendingMinusLine = line; // hold until we know if the file is ignored
       continue;
     }
     if (line.startsWith("+++ ")) {
@@ -37,10 +43,14 @@ export function parseDiff(diff: string, ignorePaths: string[] = []): ParsedDiff 
       if (currentPath && !ignoring && !validLines.has(currentPath)) {
         validLines.set(currentPath, new Set());
       }
-      if (!ignoring) out.push(line);
+      if (!ignoring) {
+        if (pendingMinusLine !== null) out.push(pendingMinusLine);
+        out.push(line);
+      }
+      pendingMinusLine = null;
       continue;
     }
-    if (ignoring) continue; // skip every line of an ignored file
+    if (ignoring) continue;
     if (line.startsWith("@@")) {
       const m = /\+(\d+)/.exec(line);
       newLine = m ? parseInt(m[1], 10) : 0;

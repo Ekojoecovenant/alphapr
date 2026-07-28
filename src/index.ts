@@ -343,6 +343,16 @@ async function handlePREvent(job: ReviewJob, env: Env) {
     severityThreshold === "major" ? 0 : severityThreshold === "minor" ? 1 : 2;
   result.findings = result.findings.filter((f) => rank[f.severity] <= thresholdRank);
 
+  if (!result.raw) {
+    const majorCount = result.findings.filter((f) => f.severity === "major").length;
+    const minorCount = result.findings.filter((f) => f.severity === "minor").length;
+    const nitCount = result.findings.filter((f) => f.severity === "nit").length;
+    result.verdict =
+      result.findings.length === 0
+        ? "✅ LGTM — no issues found."
+        : `⚠️ ${result.findings.length} issues (${majorCount} major, ${minorCount} minor, ${nitCount} nits)`;
+  }
+
   // Split findings into anchorable vs not, validated against the real diff
   const anchored: Finding[] = [];
   const unanchored: Finding[] = [];

@@ -1,4 +1,5 @@
 import { encryptSecret } from "./crypto";
+import { getInstallation } from './db';
 
 // ── HMAC signing for state params and form tokens ──
 
@@ -46,7 +47,8 @@ function esc(s: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function html(body: string, status = 200): Response {
@@ -159,6 +161,8 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
       .map((i) => `<option value="${i.id}">${esc(i.account.login)} (${i.id})</option>`)
       .join("");
 
+    const existingConfig = await getInstallation(env.DB, instData.installations[0].id);
+
     return html(`
       <h2>Configure AlphaPR</h2>
       <form method="POST" action="/setup/save">
@@ -172,31 +176,31 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
         </label>
 
         <label>Model
-          <input name="model" type="text" value="deepseek/deepseek-v4-flash">
+          <input name="model" type="text" value="${esc(existingConfig?.model ?? "deepseek/deepseek-v4-flash")}">
           <p class="hint">Any OpenRouter model. Fast, non-reasoning models recommended.</p>
         </label>
 
         <label>Severity threshold
           <select name="severityThreshold">
-            <option value="all">All (major, minor, nits)</option>
-            <option value="minor">Minor and above</option>
-            <option value="major">Major only</option>
+            <option value="all" ${existingConfig?.severity_threshold === "all" || !existingConfig ? "selected" : ""}>All (major, minor, nits)</option>
+            <option value="minor" ${existingConfig?.severity_threshold === "minor" ? "selected" : ""}>Minor and above</option>
+            <option value="major" ${existingConfig?.severity_threshold === "major" ? "selected" : ""}>Major only</option>
           </select>
         </label>
 
         <label>Review tone
           <select name="reviewTone">
-            <option value="thorough">Thorough</option>
-            <option value="concise">Concise</option>
+            <option value="thorough" ${existingConfig?.review_tone === "thorough" || !existingConfig ? "selected" : ""}>Thorough</option>
+            <option value="concise" ${existingConfig?.review_tone === "concise" ? "selected" : ""}>Concise</option>
           </select>
         </label>
 
         <label>Ignore paths
-          <input name="ignorePaths" type="text" placeholder="dist/,*.lock,*.min.js">
-          <p class="hint">Comma-separated. Supports "dir/" prefixes and "*.ext" suffixes.</p>
+          <input name="ignorePaths" type="text" value="${esc(existingConfig?.ignore_paths ?? "")}" placeholder="dist/,*.lock,*.min.js">
+          <p class="hint">Comma-separated. Supports "dir/" prefixes and "*.ext" suffixes. If you have multiple installations, switching the dropdown above won't reload these fields — save separately per installation if settings differ.</p>
         </label>
 
-        <input type="hidden" name="token" value="${formToken}">
+        <input type="hidden" name="token" value="${esc(formToken)}">
         <button type="submit">Save configuration</button>
       </form>
     `);
@@ -281,13 +285,28 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
         .bind(installationId, match.login, encrypted, model, severityThreshold, reviewTone, ignorePaths)
         .run();
     } else {
-      // No new key — update config only, leave api_key_encrypted untouched
+      // No new key — update config only, preserving anything not explicitly changed
+      // is handled by the client submitting the pre-filled form values (see callback).
+      // We still guard against wiping config if the row somehow has no prior state.
+      const current = await env.DB.prepare(
+        `SELECT model, severity_threshold, review_tone, ignore_paths FROM installations WHERE installation_id = ?`
+      )
+        .bind(installationId)
+        .first<{ model: string; severity_threshold: string; review_tone: string; ignore_paths: string }>();
+
       await env.DB.prepare(
         `UPDATE installations SET
            account_login = ?, model = ?, severity_threshold = ?, review_tone = ?, ignore_paths = ?
          WHERE installation_id = ?`
       )
-        .bind(match.login, model, severityThreshold, reviewTone, ignorePaths, installationId)
+        .bind(
+          match.login,
+          model || current?.model || "deepseek/deepseek-v4-flash",
+          severityThreshold || current?.severity_threshold || "all",
+          reviewTone || current?.review_tone || "thorough",
+          ignorePaths, // empty string is a valid, explicit "no ignores" — don't fall back
+          installationId
+        )
         .run();
     }
 
