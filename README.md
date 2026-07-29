@@ -17,6 +17,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **Configurable per install** — pick the model, filter by severity, choose thorough or concise reviews, and ignore paths (like `dist/` or `*.lock`), all from the setup page
 - **Free-tier friendly** — runs with Cloudflare Queues for production use, or in a queueless mode on Cloudflare's free plan
 - **Tested** — the diff parser, JSON extraction, and OAuth signing logic have automated test coverage, including regression tests against real production incidents
+- **PR description summaries** — a concise, auto-generated overview appended to the PR description, kept current across pushes without touching what you wrote
 
 ## How it works
 
@@ -39,6 +40,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 7. Valid findings are posted as **inline review comments** on the exact lines, pinned to the reviewed commit; anything unanchorable goes into the summary instead of failing
 8. The status comment morphs into the verdict, and the check run concludes (success / neutral / action required)
 9. Save the reviewed SHA and the **full, unfiltered** review to D1
+10. *(Queue mode only)* Generate a short summary of the full PR and append it to the PR description in a marker-delimited block, replacing only that block on future updates
 
 If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and falls back to a full review — then self-heals its state on the next push.
 
@@ -196,8 +198,6 @@ pnpm test
 
 ## Roadmap
 
-- **PR description summaries** — an auto-generated "what this PR does" summary, written into a marker-delimited block (`<!-- alphapr-summary -->...<!-- /alphapr-summary -->`) in the PR description. Updated on both `opened` and `synchronize`, touching only the marked block — author-written description content is never overwritten.
-- **Queue consumer test coverage** — currently untested; the diff parser, JSON extraction, and OAuth signing are covered.
 - **Multi-line suggestion ranges** — Apply-suggestion fixes that span more than one line.
 - **Multi-provider support** — direct Anthropic/OpenAI/etc. alongside OpenRouter.
 - **Hosted setup site** — a proper landing and configuration site beyond the raw `/setup` page.
