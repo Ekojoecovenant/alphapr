@@ -1,5 +1,7 @@
 # AlphaPR
 
+[![CI](https://github.com/Ekojoecovenant/alphapr/actions/workflows/ci.yml/badge.svg)](https://github.com/Ekojoecovenant/alphapr/actions/workflows/ci.yml)
+
 **AlphaPR is a BYOK AI PR reviewer that comments on the exact lines it's talking about — and remembers what it already said.**
 
 Bring your own OpenRouter key, pick any model, install the GitHub App on your repos. Findings land as inline comments on the changed lines, with one-click Apply-suggestion fixes. First push gets a full review; every push after that gets an incremental one, scoped to only what changed, with the bot's previous review as context so it never repeats itself.
@@ -16,8 +18,8 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **Checks integration** — a review check run in the PR's checks list, in-progress → concluded, so AlphaPR shows up like any CI step (and can gate merges if you make it required)
 - **Configurable per install** — pick the model, filter by severity, choose thorough or concise reviews, and ignore paths (like `dist/` or `*.lock`), all from the setup page
 - **Free-tier friendly** — runs with Cloudflare Queues for production use, or in a queueless mode on Cloudflare's free plan
-- **Tested** — the diff parser, JSON extraction, and OAuth signing logic have automated test coverage, including regression tests against real production incidents
 - **PR description summaries** — a concise, auto-generated overview appended to the PR description, kept current across pushes without touching what you wrote
+- **Tested** — the diff parser, JSON extraction, and OAuth signing logic have automated test coverage, including regression tests against real production incidents, enforced by CI on every PR
 
 ## How it works
 
@@ -45,7 +47,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and falls back to a full review — then self-heals its state on the next push.
 
 **Queue mode** (default, requires Workers Paid): retries automatically on transient failures, up to 15 minutes per job, with a dead-letter queue for jobs that fail repeatedly.
-**Free-tier mode** (`QUEUE_MODE` unset or not `"true"`, no queue): runs inline within Cloudflare's ~30-second background execution limit. No retries — a failure is reported once via the status comment and check run.
+**Free-tier mode** (`QUEUE_MODE` unset or not `"true"`, no queue): runs inline within Cloudflare's ~30-second background execution limit. No retries — a failure is reported once via the status comment and check run. PR description summaries are skipped in this mode.
 
 ## Why this architecture
 
@@ -59,7 +61,7 @@ If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and 
 
 **Encrypted BYOK, because it's multi-tenant.** Each installation stores its own OpenRouter key, AES-GCM encrypted before it touches the database. Keys are configured through an OAuth-verified setup page and deleted when the App is uninstalled.
 
-**Tests, because "fixed" and "shipped" aren't the same thing.** More than one fix in this project was agreed on, discussed, and then never actually landed in the code — caught only once a real test existed to prove it. The test suite covers the trickiest logic: diff parsing edge cases, JSON extraction from messy model output (including a real leaked-reasoning incident), and the HMAC signing behind the setup flow.
+**Tests, because "fixed" and "shipped" aren't the same thing.** More than one fix in this project was agreed on, discussed, and then never actually landed in the code — caught only once a real test existed to prove it. The test suite covers the trickiest logic: diff parsing edge cases, JSON extraction from messy model output (including a real leaked-reasoning incident), and the HMAC signing behind the setup flow. CI runs it on every PR, so a regression can't merge quietly.
 
 ## Self-hosting
 
@@ -164,7 +166,7 @@ GitHub OAuth verifies they have access to the installation, then their OpenRoute
 
 ### Free-tier deployment
 
-AlphaPR can run without Cloudflare Queues, entirely within the free Workers plan. Trade-off: reviews must complete within Cloudflare's ~30-second background execution limit, so **fast, non-reasoning models are required**, and **there is no automatic retry** — a failed review is reported once via the status comment and check run.
+AlphaPR can run without Cloudflare Queues, entirely within the free Workers plan. Trade-off: reviews must complete within Cloudflare's ~30-second background execution limit, so **fast, non-reasoning models are required**, **there is no automatic retry**, and **PR description summaries are skipped**.
 
 To deploy in free-tier mode:
 
@@ -194,17 +196,46 @@ Editing settings later doesn't require re-entering your key — leave the key fi
 
 ```bash
 pnpm test
+pnpm lint
 ```
+
+Both run automatically via GitHub Actions on every pull request.
+
+## Project structure
+
+```plain
+src/
+  index.ts              # webhook routing and dispatch only
+  review-handler.ts       # the full review pipeline (handlePREvent)
+  github/
+    auth.ts               # GitHub App JWT + installation token exchange
+    api.ts                 # GitHub REST API client (comments, reviews, checks, PR body)
+  review/
+    diff.ts                # diff parsing, line-number annotation, ignore-path filtering
+    llm.ts                 # OpenRouter calls, JSON extraction, PR summary generation
+    render.ts              # findings/summary → Markdown, PR description merge
+  setup.ts                # OAuth-based self-serve configuration page
+  db.ts                   # D1 queries
+  crypto.ts               # AES-GCM key encryption
+  errors.ts               # PermanentError classification
+  verify.ts               # webhook signature verification
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and [SECURITY.md](SECURITY.md) to report a vulnerability privately.
 
 ## Roadmap
 
-- **Multi-line suggestion ranges** — Apply-suggestion fixes that span more than one line.
-- **Multi-provider support** — direct Anthropic/OpenAI/etc. alongside OpenRouter.
-- **Hosted setup site** — a proper landing and configuration site beyond the raw `/setup` page.
-- **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis.
-- **Managed tier** — eventually: use AlphaPR's own hosted models, no key required.
-- **CI** — automated test runs on every PR.
+- **Queue consumer test coverage** — currently untested; the diff parser, JSON extraction, and OAuth signing are covered
+- **Multi-line suggestion ranges** — Apply-suggestion fixes that span more than one line
+- **Multi-provider support** — direct Anthropic/OpenAI/etc. alongside OpenRouter
+- **Hosted setup site** — a proper landing and configuration site beyond the raw `/setup` page
+- **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis
+- **Managed tier** — eventually: use AlphaPR's own hosted models, no key required
+- **CD** — automatic deployment on merge to `main`, once the manual deploy process has proven stable
+- **SHA-pinned GitHub Actions + Dependabot** — harden the CI workflow's supply chain
 
 ---
 
-Built in public by [AlphaCode](https://github.com/Ekojoecovenant). PRs welcome — they'll be reviewed by the bot, obviously. Inline.
+Built in public by [AlphaCode](https://github.com/Ekojoecovenant/alphapr). PRs welcome — they'll be reviewed by the bot, obviously. Inline.
