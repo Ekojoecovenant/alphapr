@@ -121,4 +121,16 @@ I'll write it.\`\`\`json
     // The malformed finding is silently dropped, not crashed on
     expect(result?.findings.length).toBe(0);
   });
+
+  it("recovers JSON with an unbalanced brace inside a string value", () => {
+    const text = `Here's my review.
+
+{"verdict": "⚠️ 1 issues (1 major, 0 minor, 0 nits)", "findings": [{"path": "src/foo.ts", "line": 10, "severity": "major", "title": "Bad snippet", "body": "Consider this fix.", "suggestion": "const x = {"}]}`;
+
+    const result = parseReviewJson(text);
+
+    expect(result).not.toBeNull();
+    expect(result?.findings.length).toBe(1);
+    expect(result?.findings[0].suggestion).toBe("const x = {");
+  });
 });
