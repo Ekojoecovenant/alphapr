@@ -3,7 +3,7 @@ import { getInstallation } from './db';
 
 // ── HMAC signing for state params and form tokens ──
 
-async function hmacSign(data: string, secret: string): Promise<string> {
+export async function hmacSign(data: string, secret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -17,7 +17,7 @@ async function hmacSign(data: string, secret: string): Promise<string> {
     .join("");
 }
 
-async function hmacVerify(data: string, sig: string, secret: string): Promise<boolean> {
+export async function hmacVerify(data: string, sig: string, secret: string): Promise<boolean> {
   const expected = await hmacSign(data, secret);
   if (expected.length !== sig.length) return false;
   let diff = 0;

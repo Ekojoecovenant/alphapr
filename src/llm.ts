@@ -82,7 +82,7 @@ function tryParse(text: string): ReviewResult | null {
   }
 }
 
-function parseReviewJson(text: string): ReviewResult | null {
+export function parseReviewJson(text: string): ReviewResult | null {
   const trimmed = text.trim();
 
   // Strategy 1: the whole output is JSON (possibly fenced at the edges)
