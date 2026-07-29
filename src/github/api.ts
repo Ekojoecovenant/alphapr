@@ -1,4 +1,4 @@
-import { PermanentError } from "./errors";
+import { PermanentError } from "../errors";
 
 async function githubApiCall(
   token: string,

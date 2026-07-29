@@ -1,4 +1,4 @@
-import { PermanentError } from './errors';
+import { PermanentError } from '../errors';
 
 function base64url(input: ArrayBuffer | string): string {
   const bytes =
