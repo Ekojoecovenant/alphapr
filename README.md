@@ -16,6 +16,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **Checks integration** — a review check run in the PR's checks list, in-progress → concluded, so AlphaPR shows up like any CI step (and can gate merges if you make it required)
 - **Configurable per install** — pick the model, filter by severity, choose thorough or concise reviews, and ignore paths (like `dist/` or `*.lock`), all from the setup page
 - **Free-tier friendly** — runs with Cloudflare Queues for production use, or in a queueless mode on Cloudflare's free plan
+- **Tested** — the diff parser, JSON extraction, and OAuth signing logic have automated test coverage, including regression tests against real production incidents
 
 ## How it works
 
@@ -32,7 +33,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 1. Authenticate as the GitHub App (short-lived JWT → installation access token)
 2. Resolve the installation's own OpenRouter key (stored encrypted), model, and config (severity threshold, tone, ignore paths)
 3. Check D1 state — first review of a PR gets the **full diff**; updates get **only the changes since the last reviewed commit**, plus the bot's previous review as context
-4. Parse and annotate the diff — every line is prefixed with its true line number, and ignored paths are dropped before the model ever sees them
+4. Parse and annotate the diff — every line is prefixed with its true line number, and ignored paths (files and their headers) are dropped before the model ever sees them
 5. The model returns structured JSON findings; line references are validated against the real diff before anything is posted
 6. Findings are filtered by severity threshold for display (the full set is preserved separately for memory)
 7. Valid findings are posted as **inline review comments** on the exact lines, pinned to the reviewed commit; anything unanchorable goes into the summary instead of failing
@@ -42,19 +43,21 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and falls back to a full review — then self-heals its state on the next push.
 
 **Queue mode** (default, requires Workers Paid): retries automatically on transient failures, up to 15 minutes per job, with a dead-letter queue for jobs that fail repeatedly.
-**Free-tier mode** (`QUEUE_MODE=false`, no queue): runs inline within Cloudflare's ~30-second background execution limit. No retries — a failure is reported once via the status comment and check run.
+**Free-tier mode** (`QUEUE_MODE` unset or not `"true"`, no queue): runs inline within Cloudflare's ~30-second background execution limit. No retries — a failure is reported once via the status comment and check run.
 
 ## Why this architecture
 
 **A GitHub App, not a GitHub Action.** Actions live inside each repo's workflow files — fine for personal use, clunky for a product. An installable App needs its own backend to receive webhooks, and a Cloudflare Worker is that backend: edge latency, zero servers to manage.
 
-**A queue, because the first version broke.** The initial build did everything inside the webhook handler with `waitUntil()`. Then real LLM calls started blowing past the 30-second background limit — the logs literally showed reviews dying mid-generation. The fix was the architecture the project should have had anyway: the Worker verifies and dispatches in milliseconds, then hands the task to the queue, and the queue consumer handles the slow work gracefully — a 15-minute budget, automatic retries, and a dead-letter queue for anything that still fails. Free-tier mode later resurrected the original `waitUntil` path as an opt-in for self-hosters without a paid plan — same core review logic, just a different dispatch at the edge.
+**A queue, because the first version broke.** The initial build did everything inside the webhook handler with `waitUntil()`. Then real LLM calls started blowing past the 30-second background limit — the logs literally showed reviews dying mid-generation. The fix was the architecture the project should have had anyway: the Worker verifies and dispatches in milliseconds, then hands the task to the queue, and the queue consumer handles the slow work gracefully — a 15-minute budget, automatic retries, and a dead-letter queue for anything that still fails. Free-tier mode later resurrected the original `waitUntil` path as an opt-in for self-hosters without a paid plan.
 
 **D1, because she remembers.** A single table stores the last reviewed commit SHA and the previous review body per PR. That's what makes incremental reviews possible — and what stops the bot from re-litigating the whole PR on every push. Severity-threshold filtering is applied only for display; the full review is always what's remembered, so a below-threshold finding isn't silently forgotten.
 
-**Our own diff parser, because models can't count.** LLMs are unreliable at deriving line numbers from hunk offsets. So AlphaPR computes the numbers itself, hands them to the model inside the annotated diff, and verifies every returned line reference against the parsed diff before posting. Hallucinated locations demote gracefully to the summary instead of producing broken comments.
+**Our own diff parser, because models can't count.** LLMs are unreliable at deriving line numbers from hunk offsets. So AlphaPR computes the numbers itself, hands them to the model inside the annotated diff, and verifies every returned line reference against the parsed diff before posting. The parser tracks hunk-body state explicitly, so extended file-header metadata is handled correctly and hunk content is never mistaken for a header. Hallucinated locations demote gracefully to the summary instead of producing broken comments.
 
 **Encrypted BYOK, because it's multi-tenant.** Each installation stores its own OpenRouter key, AES-GCM encrypted before it touches the database. Keys are configured through an OAuth-verified setup page and deleted when the App is uninstalled.
+
+**Tests, because "fixed" and "shipped" aren't the same thing.** More than one fix in this project was agreed on, discussed, and then never actually landed in the code — caught only once a real test existed to prove it. The test suite covers the trickiest logic: diff parsing edge cases, JSON extraction from messy model output (including a real leaked-reasoning incident), and the HMAC signing behind the setup flow.
 
 ## Self-hosting
 
@@ -114,7 +117,7 @@ In `wrangler.jsonc`, set your values in `vars`:
 "vars": {
   "FALLBACK_OWNER": "your-github-username",   // PRs on this account's repos fall back to OPENROUTER_API_KEY
   "GITHUB_CLIENT_ID": "your-app-client-id",
-  "QUEUE_MODE": "true"                         // set to "false" for free-tier deployment
+  "QUEUE_MODE": "true"                         // set to anything other than "true" for free-tier deployment
 }
 ```
 
@@ -159,12 +162,12 @@ GitHub OAuth verifies they have access to the installation, then their OpenRoute
 
 ### Free-tier deployment
 
-AlphaPR can run without Cloudflare Queues, entirely within the free Workers plan. Trade-off: reviews must complete within Cloudflare's ~30-second background execution limit, so **fast, non-reasoning models are required** — reasoning models will likely time out — and **there is no automatic retry**: a failed review is reported once via the status comment and check run.
+AlphaPR can run without Cloudflare Queues, entirely within the free Workers plan. Trade-off: reviews must complete within Cloudflare's ~30-second background execution limit, so **fast, non-reasoning models are required**, and **there is no automatic retry** — a failed review is reported once via the status comment and check run.
 
 To deploy in free-tier mode:
 
 1. Remove the `queues` block from `wrangler.jsonc` entirely
-2. Set `"QUEUE_MODE": "false"` in `vars`
+2. Set `"QUEUE_MODE"` to anything other than `"true"` in `vars`
 3. Skip creating `pr-review-jobs` and `pr-review-dlq` in step 5
 4. When configuring an installation at `/setup`, choose a fast model (e.g. `deepseek/deepseek-v4-flash`)
 
@@ -185,15 +188,22 @@ After installing, visit `/setup` to configure per installation:
 
 Editing settings later doesn't require re-entering your key — leave the key field blank to keep it.
 
+### Running tests
+
+```bash
+pnpm test
+```
+
 ## Roadmap
 
-- **PR description summaries** — an auto-generated "what this PR does" summary, written into a marker-delimited block (`<!-- alphapr-summary -->...<!-- /alphapr-summary -->`) in the PR description. Updated on both `opened` and `synchronize` so it stays current as the PR evolves. Only the marked block is touched — author-written description content is never overwritten. No new schema needed; the marker itself is the edit target.
-- **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis
-- **Test coverage** — unit tests for the diff parser, OAuth setup flow, and queue consumer
-- **Multi-line suggestion ranges** — Apply-suggestion fixes that span more than one line
-- **Multi-provider support** — direct Anthropic/OpenAI/etc. alongside OpenRouter
-- **Hosted setup site** — a proper landing and configuration site beyond the raw `/setup` page
-- **Managed tier** — eventually: use AlphaPR's own hosted models, no key required
+- **PR description summaries** — an auto-generated "what this PR does" summary, written into a marker-delimited block (`<!-- alphapr-summary -->...<!-- /alphapr-summary -->`) in the PR description. Updated on both `opened` and `synchronize`, touching only the marked block — author-written description content is never overwritten.
+- **Queue consumer test coverage** — currently untested; the diff parser, JSON extraction, and OAuth signing are covered.
+- **Multi-line suggestion ranges** — Apply-suggestion fixes that span more than one line.
+- **Multi-provider support** — direct Anthropic/OpenAI/etc. alongside OpenRouter.
+- **Hosted setup site** — a proper landing and configuration site beyond the raw `/setup` page.
+- **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis.
+- **Managed tier** — eventually: use AlphaPR's own hosted models, no key required.
+- **CI** — automated test runs on every PR.
 
 ---
 
