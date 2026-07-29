@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseDiff } from "../src/diff";
+import { parseDiff } from "../src/review/diff";
 
 describe("parseDiff", () => {
   it("numbers added lines with their true new-file line numbers", () => {

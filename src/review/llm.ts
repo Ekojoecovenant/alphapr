@@ -1,4 +1,4 @@
-import { PermanentError } from './errors';
+import { PermanentError } from '../errors';
 
 export type Severity = "major" | "minor" | "nit";
 

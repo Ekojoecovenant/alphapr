@@ -13,16 +13,16 @@ import {
   completeCheckRun,
   type ReviewCommentInput,
   type CheckConclusion,
-} from "./github-api";
-import { createAppJWT, getInstallationToken } from "./github-auth";
-import { reviewDiff, type Finding } from "./llm";
-import { parseDiff } from "./diff";
+} from "./github/api";
+import { createAppJWT, getInstallationToken } from "./github/auth";
+import { reviewDiff, type Finding } from "./review/llm";
+import { parseDiff } from "./review/diff";
 import {
   renderAnchoredComment,
   renderSummary,
   renderForMemory,
   sortFindings,
-} from "./render";
+} from "./review/render";
 import { verifySignature } from "./verify";
 import { decryptSecret } from "./crypto";
 import { PermanentError } from "./errors";

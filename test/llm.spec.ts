@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseReviewJson } from "../src/llm";
+import { parseReviewJson } from "../src/review/llm";
 
 describe("parseReviewJson", () => {
   it("parses clean, unfenced JSON directly", () => {
