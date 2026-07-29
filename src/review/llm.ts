@@ -218,3 +218,43 @@ ${annotatedDiff}`,
   console.log("Review output was not valid JSON; falling back to raw text");
   return { verdict: "", findings: [], raw: content.trim() };
 }
+
+
+// ========== SUMMARY ============ //
+const SUMMARY_PROMPT = `You summarize a pull request's overall changes for its description. Output 2-5 concise Markdown bullet points describing WHAT changed and WHY it matters to someone skimming the PR — not line-by-line implementation detail. Do not use headings. Do not wrap in code fences. Output ONLY the bullet points, nothing else.`;
+
+/** Best-effort PR description summary. Returns null on any failure — never throws. */
+export async function generateSummary(
+  fullDiff: string,
+  config: { apiKey: string; model: string }
+): Promise<string | null> {
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      signal: AbortSignal.timeout(60_000),
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/Ekojoecovenant/alphapr",
+        "X-Title": "AlphaPR",
+      },
+      body: JSON.stringify({
+        model: config.model,
+        max_tokens: 500,
+        reasoning: { max_tokens: 500 },
+        messages: [
+          { role: "system", content: SUMMARY_PROMPT },
+          { role: "user", content: `Summarize this pull request diff:\n\n${fullDiff}` },
+        ],
+      }),
+    });
+
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const content = data.choices?.[0]?.message?.content;
+    return content?.trim() || null;
+  } catch {
+    return null;
+  }
+}
