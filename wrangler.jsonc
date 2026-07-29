@@ -23,7 +23,8 @@
 	],
 	"vars": {
 		"FALLBACK_OWNER": "Ekojoecovenant",
-		"GITHUB_CLIENT_ID": "Iv23liPMCeYoTUsbbC5b"
+		"GITHUB_CLIENT_ID": "Iv23liPMCeYoTUsbbC5b",
+		"QUEUE_MODE": "true"
 	},
 
 	// ⚠️ KEY_ENCRYPTION_SECRET is PERSISTENT. It encrypts all stored tenant API keys.

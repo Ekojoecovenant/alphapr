@@ -15,6 +15,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **Self-healing** — force-pushes that erase the remembered commit are detected and recovered automatically
 - **Checks integration** — a review check run in the PR's checks list, in-progress → concluded, so AlphaPR shows up like any CI step (and can gate merges if you make it required)
 - **Configurable per install** — pick the model, filter by severity, choose thorough or concise reviews, and ignore paths (like `dist/` or `*.lock`), all from the setup page
+- **Free-tier friendly** — runs with Cloudflare Queues for production use, or in a queueless mode on Cloudflare's free plan
 
 ## How it works
 
@@ -22,31 +23,34 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 
 1. GitHub sends a `pull_request` webhook (`opened` / `synchronize`)
 2. Worker verifies the HMAC-SHA256 signature
-3. Worker posts a "🔍 Reviewing…" status comment on the PR
-4. Worker enqueues a small, typed review job
+3. Worker posts a "🔍 Reviewing…" status comment and creates an in-progress check run
+4. Worker dispatches the review job — to a **Cloudflare Queue** (default) or inline via `waitUntil` (free-tier mode)
 5. Worker responds `200` to GitHub immediately
 
-### Step 2 — Cloudflare Queue consumer (slow path, up to 15 minutes)
+### Step 2 — Review execution (queue consumer, or inline in free-tier mode)
 
-1. Consume the job (with automatic retries and a dead-letter queue for jobs that fail repeatedly)
-2. Authenticate as the GitHub App (short-lived JWT → installation access token)
-3. Resolve the installation's own OpenRouter key (stored encrypted) and model
-4. Check D1 state — first review of a PR gets the **full diff**; updates get **only the changes since the last reviewed commit**, plus the bot's previous review as context
-5. Parse and annotate the diff — every line is prefixed with its true line number before the model sees it
-6. The model returns structured JSON findings; line references are validated against the real diff before anything is posted
-7. Valid findings are posted as **inline review comments** on the exact lines; anything unanchorable goes into the summary instead of failing
-8. The status comment morphs into the verdict and inline-comment count
-9. Save the reviewed SHA and review body to D1
+1. Authenticate as the GitHub App (short-lived JWT → installation access token)
+2. Resolve the installation's own OpenRouter key (stored encrypted), model, and config (severity threshold, tone, ignore paths)
+3. Check D1 state — first review of a PR gets the **full diff**; updates get **only the changes since the last reviewed commit**, plus the bot's previous review as context
+4. Parse and annotate the diff — every line is prefixed with its true line number, and ignored paths are dropped before the model ever sees them
+5. The model returns structured JSON findings; line references are validated against the real diff before anything is posted
+6. Findings are filtered by severity threshold for display (the full set is preserved separately for memory)
+7. Valid findings are posted as **inline review comments** on the exact lines, pinned to the reviewed commit; anything unanchorable goes into the summary instead of failing
+8. The status comment morphs into the verdict, and the check run concludes (success / neutral / action required)
+9. Save the reviewed SHA and the **full, unfiltered** review to D1
 
 If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and falls back to a full review — then self-heals its state on the next push.
+
+**Queue mode** (default, requires Workers Paid): retries automatically on transient failures, up to 15 minutes per job, with a dead-letter queue for jobs that fail repeatedly.
+**Free-tier mode** (`QUEUE_MODE=false`, no queue): runs inline within Cloudflare's ~30-second background execution limit. No retries — a failure is reported once via the status comment and check run.
 
 ## Why this architecture
 
 **A GitHub App, not a GitHub Action.** Actions live inside each repo's workflow files — fine for personal use, clunky for a product. An installable App needs its own backend to receive webhooks, and a Cloudflare Worker is that backend: edge latency, zero servers to manage.
 
-**A queue, because the first version broke.** The initial build did everything inside the webhook handler with `waitUntil()`. Then real LLM calls started blowing past the 30-second background limit — the logs literally showed reviews dying mid-generation. The fix was the architecture the project should have had anyway: the Worker verifies and enqueues in milliseconds, then hands the task over to the queue, and the queue consumer handles the slow work gracefully — a 15-minute budget, automatic retries, and a dead-letter queue for anything that still fails.
+**A queue, because the first version broke.** The initial build did everything inside the webhook handler with `waitUntil()`. Then real LLM calls started blowing past the 30-second background limit — the logs literally showed reviews dying mid-generation. The fix was the architecture the project should have had anyway: the Worker verifies and dispatches in milliseconds, then hands the task to the queue, and the queue consumer handles the slow work gracefully — a 15-minute budget, automatic retries, and a dead-letter queue for anything that still fails. Free-tier mode later resurrected the original `waitUntil` path as an opt-in for self-hosters without a paid plan — same core review logic, just a different dispatch at the edge.
 
-**D1, because she remembers.** A single table stores the last reviewed commit SHA and the previous review body per PR. That's what makes incremental reviews possible — and what stops the bot from re-litigating the whole PR on every push.
+**D1, because she remembers.** A single table stores the last reviewed commit SHA and the previous review body per PR. That's what makes incremental reviews possible — and what stops the bot from re-litigating the whole PR on every push. Severity-threshold filtering is applied only for display; the full review is always what's remembered, so a below-threshold finding isn't silently forgotten.
 
 **Our own diff parser, because models can't count.** LLMs are unreliable at deriving line numbers from hunk offsets. So AlphaPR computes the numbers itself, hands them to the model inside the annotated diff, and verifies every returned line reference against the parsed diff before posting. Hallucinated locations demote gracefully to the summary instead of producing broken comments.
 
@@ -54,13 +58,13 @@ If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and 
 
 ## Self-hosting
 
-> Requires a Cloudflare account on the **Workers Paid** plan (~$5/mo) for Queues. A free-tier mode is on the roadmap.
+> Production use (Cloudflare Queues) requires the **Workers Paid** plan (~$5/mo). A free, queueless mode is also available — see [Free-tier deployment](#free-tier-deployment) below.
 
 ### 1. Register a GitHub App
 
 At **github.com/settings/apps → New GitHub App**:
 
-- **Permissions:** Pull requests (Read & Write), Contents (Read-only), Metadata (Read-only)
+- **Permissions:** Pull requests (Read & Write), Contents (Read-only), Metadata (Read-only), Checks (Read & Write)
 - **Subscribe to events:** Pull request
 - **Webhook secret:** generate one and save it:
 
@@ -109,7 +113,8 @@ In `wrangler.jsonc`, set your values in `vars`:
 ```jsonc
 "vars": {
   "FALLBACK_OWNER": "your-github-username",   // PRs on this account's repos fall back to OPENROUTER_API_KEY
-  "GITHUB_CLIENT_ID": "your-app-client-id"
+  "GITHUB_CLIENT_ID": "your-app-client-id",
+  "QUEUE_MODE": "true"                         // set to "false" for free-tier deployment
 }
 ```
 
@@ -123,12 +128,15 @@ pnpm wrangler queues create pr-review-dlq
 pnpm wrangler d1 create pr-agent-db
 ```
 
+(Skip creating the queues if deploying in free-tier mode — see below.)
+
 Update `wrangler.jsonc` with the D1 `database_id` from the output, then apply the migrations:
 
 ```bash
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0001_init.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0002_add_review_body.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0003_add_installations.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0004_add_config.sql
 ```
 
 ### 6. Deploy and connect
@@ -149,9 +157,22 @@ https://<your-worker>.workers.dev/setup
 
 GitHub OAuth verifies they have access to the installation, then their OpenRouter key is encrypted and stored for that installation only. Open or update a PR after configuring — AlphaPR takes it from there.
 
+### Free-tier deployment
+
+AlphaPR can run without Cloudflare Queues, entirely within the free Workers plan. Trade-off: reviews must complete within Cloudflare's ~30-second background execution limit, so **fast, non-reasoning models are required** — reasoning models will likely time out — and **there is no automatic retry**: a failed review is reported once via the status comment and check run.
+
+To deploy in free-tier mode:
+
+1. Remove the `queues` block from `wrangler.jsonc` entirely
+2. Set `"QUEUE_MODE": "false"` in `vars`
+3. Skip creating `pr-review-jobs` and `pr-review-dlq` in step 5
+4. When configuring an installation at `/setup`, choose a fast model (e.g. `deepseek/deepseek-v4-flash`)
+
+If a review fails in free-tier mode, re-push or re-open the PR to try again.
+
 ### Choosing a model
 
-The model is set per installation on the setup page (any model available on OpenRouter works). **Fast, non-reasoning models are recommended** — reasoning models produce deeper analysis but can take minutes per review and require large token budgets; fast models return in seconds and the structured review contract carries the quality.
+The model is set per installation on the setup page (any model available on OpenRouter works). **Fast, non-reasoning models are recommended** — reasoning models produce deeper analysis but can take minutes per review and require large token budgets; fast models return in seconds and the structured review contract carries the quality. In free-tier mode, fast models are effectively required.
 
 ### Configuration
 
@@ -166,9 +187,11 @@ Editing settings later doesn't require re-entering your key — leave the key fi
 
 ## Roadmap
 
-- **Free-tier mode** — a no-queue path (fast models only) so self-hosters can run on Cloudflare's free plan
 - **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis
 - **Test coverage** — unit tests for the diff parser, OAuth setup flow, and queue consumer
+- **Multi-line suggestion ranges** — Apply-suggestion fixes that span more than one line
+- **Multi-provider support** — direct Anthropic/OpenAI/etc. alongside OpenRouter
+- **Hosted setup site** — a proper landing and configuration site beyond the raw `/setup` page
 - **Managed tier** — eventually: use AlphaPR's own hosted models, no key required
 
 ---
