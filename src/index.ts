@@ -41,7 +41,7 @@ interface ReviewJob {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     // Self-serve setup routes (own auth: OAuth + signed tokens)
     const setupResponse = await handleSetup(request, env);
     if (setupResponse) return setupResponse;
@@ -141,7 +141,20 @@ export default {
         statusCommentId,
         checkRunId,
       };
-      await env.REVIEW_QUEUE.send(job);
+      
+      if (env.QUEUE_MODE === "false") {
+        ctx.waitUntil(
+          handlePREvent(job, env).catch((err) => {
+            console.error(
+              `Free-tier review failed (no retry): ${err instanceof Error ? err.message : err}`
+            );
+            // Best-effort: surface the failure since there's no queue catch block to do it
+            surfaceFailure(job, env, err instanceof PermanentError).catch(() => {});
+          })
+        );
+      } else {
+        await env.REVIEW_QUEUE?.send(job);
+      }
     }
 
     return new Response("ok", { status: 200 });
@@ -163,47 +176,7 @@ export default {
         }
 
         // Best-effort: surface the failure on the PR (status comment + check run).
-        const body = message.body;
-        if (body.statusCommentId !== null || body.checkRunId !== null) {
-          try {
-            const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
-            const token = await getInstallationToken(jwt, body.installationId);
-
-            if (body.statusCommentId !== null) {
-              try {
-                await editComment(
-                  token,
-                  body.owner,
-                  body.repo,
-                  body.statusCommentId,
-                  isPermanent
-                    ? "⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration."
-                    : "⚠️ **AlphaPR review failed.** Retrying automatically…"
-                );
-              } catch (e) {
-                console.warn('Failed to update comment, continuing to check-run:', e);
-              }
-            }
-
-            if (body.checkRunId !== null) {
-              try {
-                await completeCheckRun(
-                  token,
-                  body.owner,
-                  body.repo,
-                  body.checkRunId,
-                  isPermanent ? "failure" : "neutral",
-                  "AlphaPR review failed",
-                  isPermanent ? "This won't be retried." : "Retrying automatically…"
-                );
-              } catch {
-                /* never let status-surfacing break the queue handler */
-              }
-            }
-          } catch {
-            /* never let status-surfacing break the queue handler */
-          }
-        }
+        await surfaceFailure(message.body, env, isPermanent).catch(() => {});
 
         if (isPermanent) {
           message.ack();
@@ -456,4 +429,42 @@ async function handlePREvent(job: ReviewJob, env: Env) {
   console.log(
     `✅ Posted ${usedIncremental ? "incremental" : "full"} review on PR #${job.prNumber} (${anchoredCount} inline, ${unanchored.length} in summary)`
   );
+}
+
+async function surfaceFailure(job: ReviewJob, env: Env, isPermanent: boolean): Promise<void> {
+  if (job.statusCommentId === null && job.checkRunId === null) return;
+  const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+  const token = await getInstallationToken(jwt, job.installationId);
+
+  if (job.statusCommentId !== null) {
+    try {
+      await editComment(
+        token,
+        job.owner,
+        job.repo,
+        job.statusCommentId,
+        isPermanent
+          ? "⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration."
+          : "⚠️ **AlphaPR review failed.**"
+      );
+    } catch {
+      /* fall through to check-run update */
+    }
+  }
+
+  if (job.checkRunId !== null) {
+    try {
+      await completeCheckRun(
+        token,
+        job.owner,
+        job.repo,
+        job.checkRunId,
+        isPermanent ? "failure" : "neutral",
+        "AlphaPR review failed",
+        isPermanent ? "This won't be retried." : "Review failed."
+      );
+    } catch {
+      /* never let status-surfacing throw further */
+    }
+  }
 }
