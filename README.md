@@ -187,6 +187,7 @@ Editing settings later doesn't require re-entering your key — leave the key fi
 
 ## Roadmap
 
+- **PR description summaries** — an auto-generated "what this PR does" summary, written into a marker-delimited block (`<!-- alphapr-summary -->...<!-- /alphapr-summary -->`) in the PR description. Updated on both `opened` and `synchronize` so it stays current as the PR evolves. Only the marked block is touched — author-written description content is never overwritten. No new schema needed; the marker itself is the edit target.
 - **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis
 - **Test coverage** — unit tests for the diff parser, OAuth setup flow, and queue consumer
 - **Multi-line suggestion ranges** — Apply-suggestion fixes that span more than one line
