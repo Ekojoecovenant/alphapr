@@ -3,6 +3,21 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v0.9.0] — 2026-07-29
+
+### Added
+
+- Test suite (Vitest + `@cloudflare/vitest-pool-workers`) covering the diff parser, JSON extraction strategies, and HMAC signing/verification
+- Regression tests for real production incidents: a model leaking its reasoning monologue before the JSON output, and unfenced JSON containing braces breaking naive brace-matching
+
+### Fixed
+
+- `parseDiff` no longer leaks `diff --git` and `index` header lines into the annotated output for ignored files
+- `parseDiff` now tracks hunk-body state, so extended file-header metadata (rename/mode/binary markers) is handled correctly for ignored files, and hunk content beginning with `---` is never mistaken for a new file header
+- Strategy 3's JSON extraction (`parseReviewJson`) is now genuinely string-aware when brace-matching — a previously agreed fix for this had not actually been applied until the test suite caught it
+
+[v0.9.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v0.9.0
+
 ## [v0.8.0] — 2026-07-29
 
 ### Added
