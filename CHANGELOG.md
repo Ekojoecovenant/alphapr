@@ -3,6 +3,25 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v0.10.0] — 2026-07-29
+
+### Added
+
+- PR description summaries: AlphaPR generates a concise 2-5 bullet summary of the full PR and appends it to the description in a marker-delimited block (`<!-- alphapr-summary -->`), updated on both `opened` and `synchronize`
+- Author-written description content is never overwritten — only the marked block is replaced on subsequent updates
+
+### Changed
+
+- Internal restructure: `handlePREvent` and `surfaceFailure` moved out of `index.ts` into a dedicated `review-handler.ts`; `index.ts` is now routing/dispatch only
+- `src/` reorganized into `github/` (GitHub API client) and `review/` (diff parsing, LLM calls, rendering) modules
+
+### Notes
+
+- PR description summaries are **queue-mode only** — the extra LLM call and API round-trips don't fit free-tier's ~30-second budget
+- The description update is best-effort and non-atomic: an author edit to the description made in the same narrow window as AlphaPR's update could be overwritten. This never affects the main review, which always completes first.
+
+[v0.10.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v0.10.0
+
 ## [v0.9.0] — 2026-07-29
 
 ### Added
