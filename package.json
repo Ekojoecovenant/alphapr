@@ -8,13 +8,17 @@
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
 		"test": "vitest run",
+		"lint": "eslint .",
 		"cf-typegen": "wrangler types",
-		"ship": "pnpm deploy && pnpm tail"
+		"ship": "pnpm run deploy && pnpm run tail"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.12.4",
+		"@eslint/js": "^10.0.1",
 		"@types/node": "^26.1.0",
+		"eslint": "^10.8.0",
 		"typescript": "^5.5.2",
+		"typescript-eslint": "^8.65.0",
 		"vitest": "~3.2.0",
 		"wrangler": "^4.107.0"
 	}
