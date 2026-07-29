@@ -47,7 +47,7 @@
 			"binding": "DB",
 			"database_name": "pr-agent-db",
 			"database_id": "c0154d78-cb82-4931-a026-64b5d5c441ae",
-			"remote": true
+			"remote": false
 		}
 	],
 	"queues": {
