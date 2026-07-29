@@ -16,18 +16,21 @@ describe("parseReviewJson", () => {
   });
 
   it("parses JSON wrapped in a markdown fence", () => {
-    const text = "```json\n" + JSON.stringify({
-      verdict: "⚠️ 1 issues (1 major, 0 minor, 0 nits)",
-      findings: [
-        {
-          path: "src/foo.ts",
-          line: 5,
-          severity: "major",
-          title: "Missing null check",
-          body: "This could throw.",
-        },
-      ],
-    }) + "\n```";
+    const text =
+      "```json\n" +
+      JSON.stringify({
+        verdict: "⚠️ 1 issues (1 major, 0 minor, 0 nits)",
+        findings: [
+          {
+            path: "src/foo.ts",
+            line: 5,
+            severity: "major",
+            title: "Missing null check",
+            body: "This could throw.",
+          },
+        ],
+      }) +
+      "\n```";
 
     const result = parseReviewJson(text);
 
@@ -37,10 +40,7 @@ describe("parseReviewJson", () => {
   });
 
   it("recovers JSON from a model's leaked reasoning monologue (real production fixture)", () => {
-    // This is the ACTUAL output AlphaPR received from deepseek-v4-flash on PR #10,
-    // before the multi-strategy extractor existed. The model thought out loud in
-    // plain prose, then eventually emitted a fenced JSON block at the very end.
-    const text = `? Actually, the else clause at line 52 treats it as a context line and adds to newLine. But "--- a/file" is not a context line; it's a header. This could cause the line to be incorrectly numbered and added to validLines.
+    const leakedText = `? Actually, the else clause at line 52 treats it as a context line and adds to newLine. But "--- a/file" is not a context line; it's a header. This could cause the line to be incorrectly numbered and added to validLines.
 
 Let's trace: The code enters the loop, reads "diff --git ..." -> handled.
 
@@ -63,38 +63,48 @@ I'll write it.\`\`\`json
 }
 \`\`\``;
 
-    const result = parseReviewJson(text);
+    const leakedResult = parseReviewJson(leakedText);
 
-    expect(result).not.toBeNull();
-    expect(result?.findings.length).toBe(1);
-    expect(result?.findings[0].path).toBe("src/diff.ts");
-    expect(result?.findings[0].severity).toBe("nit");
+    expect(leakedResult).not.toBeNull();
+    expect(leakedResult?.findings.length).toBe(1);
+    expect(leakedResult?.findings[0].path).toBe("src/diff.ts");
+    expect(leakedResult?.findings[0].severity).toBe("nit");
   });
 
-  it("recovers unfenced JSON buried in prose, using string-aware brace matching", () => {
-    // Regression test for the bug CodeRabbit caught: a suggestion containing
-    // "{" or "}" must not break the brace-depth counter.
-    const text = `Here's my review after checking the code carefully.
+  it("recovers unfenced JSON buried in prose, using string-aware brace matching (balanced case)", () => {
+    const balancedText = `Here's my review after checking the code carefully.
 
 {"verdict": "⚠️ 1 issues (1 major, 0 minor, 0 nits)", "findings": [{"path": "src/foo.ts", "line": 10, "severity": "major", "title": "Bad object literal", "body": "Uses {} incorrectly.", "suggestion": "const x = { a: 1 };"}]}`;
 
-    const result = parseReviewJson(text);
+    const balancedResult = parseReviewJson(balancedText);
 
-    expect(result).not.toBeNull();
-    expect(result?.findings.length).toBe(1);
-    expect(result?.findings[0].suggestion).toBe("const x = { a: 1 };");
+    expect(balancedResult).not.toBeNull();
+    expect(balancedResult?.findings.length).toBe(1);
+    expect(balancedResult?.findings[0].suggestion).toBe("const x = { a: 1 };");
+  });
+
+  it("recovers JSON with an UNBALANCED brace inside a string value (regression for CodeRabbit's catch)", () => {
+    const unbalancedText = `Here's my review.
+
+{"verdict": "⚠️ 1 issues (1 major, 0 minor, 0 nits)", "findings": [{"path": "src/foo.ts", "line": 10, "severity": "major", "title": "Bad snippet", "body": "Consider this fix.", "suggestion": "const x = {"}]}`;
+
+    const unbalancedResult = parseReviewJson(unbalancedText);
+
+    expect(unbalancedResult).not.toBeNull();
+    expect(unbalancedResult?.findings.length).toBe(1);
+    expect(unbalancedResult?.findings[0].suggestion).toBe("const x = {");
   });
 
   it("returns null for genuinely unparseable garbage (triggers the raw-text fallback upstream)", () => {
-    const text = "The model just refused to follow instructions and wrote a poem instead.";
+    const garbageText = "The model just refused to follow instructions and wrote a poem instead.";
 
-    const result = parseReviewJson(text);
+    const garbageResult = parseReviewJson(garbageText);
 
-    expect(result).toBeNull();
+    expect(garbageResult).toBeNull();
   });
 
   it("caps findings at 5 even if the model returns more", () => {
-    const findings = Array.from({ length: 8 }, (_, i) => ({
+    const manyFindings = Array.from({ length: 8 }, (_, i) => ({
       path: `src/file${i}.ts`,
       line: i + 1,
       severity: "minor",
@@ -102,35 +112,22 @@ I'll write it.\`\`\`json
       body: "Some issue.",
     }));
 
-    const text = JSON.stringify({ verdict: "⚠️ 8 issues", findings });
-    const result = parseReviewJson(text);
+    const cappedText = JSON.stringify({ verdict: "⚠️ 8 issues", findings: manyFindings });
+    const cappedResult = parseReviewJson(cappedText);
 
-    expect(result?.findings.length).toBe(5);
+    expect(cappedResult?.findings.length).toBe(5);
   });
 
   it("rejects findings with an invalid severity value", () => {
-    const text = JSON.stringify({
+    const invalidText = JSON.stringify({
       verdict: "⚠️ 1 issue",
       findings: [
         { path: "src/foo.ts", line: 1, severity: "catastrophic", title: "x", body: "y" },
       ],
     });
 
-    const result = parseReviewJson(text);
+    const invalidResult = parseReviewJson(invalidText);
 
-    // The malformed finding is silently dropped, not crashed on
-    expect(result?.findings.length).toBe(0);
-  });
-
-  it("recovers JSON with an unbalanced brace inside a string value", () => {
-    const text = `Here's my review.
-
-{"verdict": "⚠️ 1 issues (1 major, 0 minor, 0 nits)", "findings": [{"path": "src/foo.ts", "line": 10, "severity": "major", "title": "Bad snippet", "body": "Consider this fix.", "suggestion": "const x = {"}]}`;
-
-    const result = parseReviewJson(text);
-
-    expect(result).not.toBeNull();
-    expect(result?.findings.length).toBe(1);
-    expect(result?.findings[0].suggestion).toBe("const x = {");
+    expect(invalidResult?.findings.length).toBe(0);
   });
 });

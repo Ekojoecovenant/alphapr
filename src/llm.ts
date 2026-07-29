@@ -103,14 +103,26 @@ export function parseReviewJson(text: string): ReviewResult | null {
 
   // Strategy 3: unfenced JSON buried in prose — brace-match from the last
   // occurrence of '"verdict"' back to its opening brace, forward to its close.
+  // Must be string-aware: braces inside JSON string values (e.g. a code
+  // suggestion containing "{") must not affect the depth count.
   const anchor = trimmed.lastIndexOf('"verdict"');
   if (anchor !== -1) {
     const start = trimmed.lastIndexOf("{", anchor);
     if (start !== -1) {
       let depth = 0;
+      let inString = false;
+      let escaped = false;
       for (let i = start; i < trimmed.length; i++) {
-        if (trimmed[i] === "{") depth++;
-        else if (trimmed[i] === "}") {
+        const ch = trimmed[i];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === "\\") escaped = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+        if (ch === '"') inString = true;
+        else if (ch === "{") depth++;
+        else if (ch === "}") {
           depth--;
           if (depth === 0) {
             const parsed = tryParse(trimmed.slice(start, i + 1));
