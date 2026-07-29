@@ -175,6 +175,11 @@ export async function completeCheckRun(
   );
 }
 
+// NOTE: getPRDescription + updatePRDescription is a non-atomic read-modify-write.
+// An author edit to the PR description between these two calls will be silently
+// overwritten. Acceptable here because this path is best-effort (never blocks
+// the main review) and the window is short — but future callers of these two
+// functions should not assume atomicity.
 export async function getPRDescription(
   token: string,
   owner: string,

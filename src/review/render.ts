@@ -80,7 +80,7 @@ export function mergeSummaryIntoDescription(existingBody: string, summaryMarkdow
     return `${before}${block}${after}`;
   }
 
-  // No existing block — prepend, preserving whatever the author wrote
+  // No existing block — append below whatever the author wrote
   const separator = existingBody.trim().length > 0 ? "\n\n" : "";
-  return `${block}${separator}${existingBody}`;
+  return `${existingBody}${separator}${block}`;
 }

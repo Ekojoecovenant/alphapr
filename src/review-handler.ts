@@ -311,12 +311,11 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
   // extra LLM call and API round-trips are too costly for free-tier's budget.
   if (env.QUEUE_MODE === "true") {
     try {
-      const fullDiffForSummary = usedIncremental
-        ? await (async () => {
-            const fullRes = await fetch(fullPrUrl, { headers: diffHeaders });
-            return fullRes.ok ? await fullRes.text() : diff;
-          })()
-        : diff;
+      let fullDiffForSummary = diff;
+      if (usedIncremental) {
+        const fullRes = await fetch(fullPrUrl, { headers: diffHeaders });
+        if (fullRes.ok) fullDiffForSummary = await fullRes.text();
+      }
 
       const prSummary = await generateSummary(fullDiffForSummary, { apiKey, model });
       if (prSummary) {

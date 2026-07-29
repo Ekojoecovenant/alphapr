@@ -228,6 +228,9 @@ export async function generateSummary(
   fullDiff: string,
   config: { apiKey: string; model: string }
 ): Promise<string | null> {
+  // Large diffs would blow the model's context; cap defensively.
+  const truncatedDiff = fullDiff.length > 20_000 ? fullDiff.slice(0, 20_000) + "\n... (truncated)" : fullDiff;
+
   try {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -240,21 +243,30 @@ export async function generateSummary(
       },
       body: JSON.stringify({
         model: config.model,
-        max_tokens: 500,
-        reasoning: { max_tokens: 500 },
+        max_tokens: 800,
+        // No `reasoning` field here: this is a short summarize-only call,
+        // not worth burning output budget on reasoning tokens.
         messages: [
           { role: "system", content: SUMMARY_PROMPT },
-          { role: "user", content: `Summarize this pull request diff:\n\n${fullDiff}` },
+          { role: "user", content: `Summarize this pull request diff:\n\n${truncatedDiff}` },
         ],
       }),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`generateSummary: OpenRouter error ${res.status} ${(await res.text()).slice(0, 300)}`);
+      return null;
+    }
 
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     const content = data.choices?.[0]?.message?.content;
-    return content?.trim() || null;
-  } catch {
+    if (!content?.trim()) {
+      console.warn("generateSummary: OpenRouter returned empty content");
+      return null;
+    }
+    return content.trim();
+  } catch (err) {
+    console.warn(`generateSummary: request failed: ${err instanceof Error ? err.message : err}`);
     return null;
   }
 }

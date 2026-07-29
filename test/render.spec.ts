@@ -2,14 +2,15 @@ import { describe, it, expect } from "vitest";
 import { mergeSummaryIntoDescription } from "../src/review/render";
 
 describe("mergeSummaryIntoDescription", () => {
-  it("prepends a summary block when no existing block is present", () => {
+  it("appends a summary block when no existing block is present", () => {
     const result = mergeSummaryIntoDescription("This PR adds a widget.", "- Adds a widget");
 
     expect(result).toContain("<!-- alphapr-summary -->");
     expect(result).toContain("- Adds a widget");
-    expect(result).toContain("This PR adds a widget."); // author content preserved
-    expect(result.indexOf("<!-- alphapr-summary -->")).toBeLessThan(
-      result.indexOf("This PR adds a widget.")
+    expect(result).toContain("This PR adds a widget.");
+    // Author content now comes FIRST, summary appended after
+    expect(result.indexOf("This PR adds a widget.")).toBeLessThan(
+      result.indexOf("<!-- alphapr-summary -->")
     );
   });
 
