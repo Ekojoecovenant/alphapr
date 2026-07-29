@@ -3,6 +3,19 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v0.8.0] — 2026-07-29
+
+### Added
+
+- Free-tier deployment mode (`QUEUE_MODE=false`): runs without Cloudflare Queues via `ctx.waitUntil`, for self-hosters on Cloudflare's free Workers plan
+- Shared `surfaceFailure` helper for consistent status-comment and check-run failure reporting across both queue and free-tier dispatch paths
+
+### Changed
+
+- Free-tier mode has no automatic retries — failures are reported once, immediately, since there is no queue to retry from
+
+[v0.8.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v0.8.0
+
 ## [v0.7.0] — 2026-07-28
 
 ### Added
