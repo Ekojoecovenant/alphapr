@@ -10,7 +10,7 @@
 		"test": "vitest run",
 		"lint": "eslint .",
 		"cf-typegen": "wrangler types",
-		"ship": "pnpm deploy && pnpm tail"
+		"ship": "pnpm run deploy && pnpm run tail"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.12.4",
