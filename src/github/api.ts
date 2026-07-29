@@ -174,3 +174,39 @@ export async function completeCheckRun(
     "Failed to complete check run"
   );
 }
+
+// NOTE: getPRDescription + updatePRDescription is a non-atomic read-modify-write.
+// An author edit to the PR description between these two calls will be silently
+// overwritten. Acceptable here because this path is best-effort (never blocks
+// the main review) and the window is short — but future callers of these two
+// functions should not assume atomicity.
+export async function getPRDescription(
+  token: string,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<string> {
+  const res = await githubApiCall(
+    token,
+    `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`,
+    { method: "GET" },
+    "Failed to fetch PR description"
+  );
+  const data = (await res.json()) as { body: string | null };
+  return data.body ?? "";
+}
+
+export async function updatePRDescription(
+  token: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  body: string
+): Promise<void> {
+  await githubApiCall(
+    token,
+    `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`,
+    { method: "PATCH", body: JSON.stringify({ body }) },
+    "Failed to update PR description"
+  );
+}

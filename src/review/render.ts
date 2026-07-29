@@ -58,3 +58,29 @@ export function renderForMemory(result: ReviewResult): string {
   }
   return out;
 }
+
+// =========== SUMMARY =========== //
+const SUMMARY_START = "<!-- alphapr-summary -->";
+const SUMMARY_END = "<!-- /alphapr-summary -->";
+
+/**
+ * Merges a generated summary into a PR description, replacing only the
+ * marker-delimited block if one already exists. Author-written content
+ * outside the markers is never touched.
+ */
+export function mergeSummaryIntoDescription(existingBody: string, summaryMarkdown: string): string {
+  const block = `${SUMMARY_START}\n## Summary by AlphaPR\n\n${summaryMarkdown}\n${SUMMARY_END}`;
+
+  const startIdx = existingBody.indexOf(SUMMARY_START);
+  const endIdx = existingBody.indexOf(SUMMARY_END);
+
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    const before = existingBody.slice(0, startIdx);
+    const after = existingBody.slice(endIdx + SUMMARY_END.length);
+    return `${before}${block}${after}`;
+  }
+
+  // No existing block — append below whatever the author wrote
+  const separator = existingBody.trim().length > 0 ? "\n\n" : "";
+  return `${existingBody}${separator}${block}`;
+}
