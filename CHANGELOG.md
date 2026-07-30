@@ -3,6 +3,12 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.0.0] — 2026-07-30
+
+The first stable release. Ten minor versions of iteration — core review pipeline, encrypted multi-tenant BYOK, self-serve OAuth setup, incremental memory with self-healing, Checks integration, per-install configuration, free-tier deployment, PR description summaries — plus a full test suite, linting, CI, and an internal restructure, all shipped and hardened through continuous review from AlphaPR itself and CodeRabbit.
+
+No new features in this release. This version marks the API, setup process, and configuration surface as stable: self-hosters and integrators can build against it without expecting breaking changes outside of major version bumps.
+
 ## [v0.10.0] — 2026-07-29
 
 ### Added
