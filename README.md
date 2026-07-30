@@ -235,7 +235,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and 
 - **Managed tier** — eventually: use AlphaPR's own hosted models, no key required
 - **CD** — automatic deployment on merge to `main`, once the manual deploy process has proven stable
 - **SHA-pinned GitHub Actions + Dependabot** — harden the CI workflow's supply chain
-- **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis. If this grows into autonomous fix-application (not just suggestions), it requires a human-in-the-loop approval gate before any autonomous write — see AgentRQ-style control-plane pattern.
+- **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis. See [ADR](docs/adr/0001-agentic-toolbox-deep-dive-server.md) for the full design.
 
 ---
 
