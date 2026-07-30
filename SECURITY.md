@@ -25,4 +25,4 @@ Reports related to any of the above, or to the OAuth/setup flow's authentication
 
 ## Supported Versions
 
-Only the latest released version is supported with security fixes. AlphaPR is pre-1.0 and evolving quickly — please stay current.
+AlphaPR follows semantic versioning from v1.0.0 onward. Security fixes are backported to the latest minor release; older minor versions are not maintained. If you're self-hosting, stay on the latest `v1.x` tag.

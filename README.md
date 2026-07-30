@@ -6,7 +6,7 @@
 
 Bring your own OpenRouter key, pick any model, install the GitHub App on your repos. Findings land as inline comments on the changed lines, with one-click Apply-suggestion fixes. First push gets a full review; every push after that gets an incremental one, scoped to only what changed, with the bot's previous review as context so it never repeats itself.
 
-> **Status:** Working v1. AlphaPR reviews its own PRs — dogfooding since day one. APIs and setup may still change.
+> **Status:** v1.0.0. Stable — the review pipeline, BYOK setup, and configuration surface are settled. New features ship as minor versions; breaking changes will be called out explicitly in the changelog.
 
 ## Features
 
@@ -235,6 +235,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and 
 - **Managed tier** — eventually: use AlphaPR's own hosted models, no key required
 - **CD** — automatic deployment on merge to `main`, once the manual deploy process has proven stable
 - **SHA-pinned GitHub Actions + Dependabot** — harden the CI workflow's supply chain
+- **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis. If this grows into autonomous fix-application (not just suggestions), it requires a human-in-the-loop approval gate before any autonomous write — see AgentRQ-style control-plane pattern.
 
 ---
 
