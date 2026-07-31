@@ -229,6 +229,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and 
 ## Roadmap
 
 - **Multi-provider support** — direct Anthropic/OpenAI/etc. alongside OpenRouter
+- **Self-hosted/open-weight direct adapters** — e.g. Ollama, Together AI, or other OpenAI-compatible endpoints for teams running their own open models, alongside OpenRouter/Anthropic/OpenAI
 - **Hosted setup site** — a proper landing and configuration site beyond the raw `/setup` page
 - **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis
 - **Managed tier** — eventually: use AlphaPR's own hosted models, no key required
