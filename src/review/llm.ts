@@ -62,7 +62,7 @@ function tryParse(text: string): ReviewResult | null {
         typeof f?.line === "number" &&
         Number.isInteger(f.line) &&
         (f.endLine === undefined ||
-          (typeof f.endLine === "number" && Number.isInteger(f.endLine) && f.endLine >= f.line)) &&
+          (typeof f.endLine === "number" && Number.isInteger(f.endLine) && f.endLine > f.line)) &&
         typeof f?.severity === "string" &&
         VALID_SEVERITIES.has(f.severity) &&
         typeof f?.title === "string" &&
