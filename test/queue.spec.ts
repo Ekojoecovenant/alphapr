@@ -100,7 +100,7 @@ describe("queue consumer", () => {
 
     await worker.queue(batch, env);
 
-    expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, true);
+    expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, true, 1, 3);
   });
 
   it("calls surfaceFailure with willRetry=false for a PermanentError", async () => {
@@ -110,7 +110,7 @@ describe("queue consumer", () => {
 
     await worker.queue(batch, env);
 
-    expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, true, false);
+    expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, true, false, 1, 3);
   });
 
   it("processes multiple messages in a batch independently", async () => {
