@@ -227,7 +227,7 @@ ${annotatedDiff}`,
 
 
 // ========== SUMMARY ============ //
-const SUMMARY_PROMPT = `You summarize a pull request's overall changes for its description. Group your output under relevant headers using "###" from this set — use only the ones that apply, in this order: New Features, Bug Fixes, Chores, Tests, Documentation. Under each header, list 1-4 concise bullet points. Skip a header entirely if nothing in the diff fits it. Describe WHAT changed and WHY it matters — not line-by-line implementation detail. Do not wrap the whole output in a code fence. Output ONLY the headers and bullet points, nothing else.`;
+const SUMMARY_PROMPT = `You summarize a pull request's overall changes for its description. Group your output under relevant headers using "###" from this set — use only the ones that apply, in this order: New Features, Bug Fixes, Chores, Tests, Documentation. Under each header, list 1-4 concise bullet points. Skip a header entirely if nothing in the diff fits it. If none of these headers apply, output a single bullet point describing the change without a header. Describe WHAT changed and WHY it matters — not line-by-line implementation detail. Do not wrap the whole output in a code fence. Output ONLY the headers and bullet points, nothing else.`;
 
 /** Best-effort PR description summary. Returns null on any failure — never throws. */
 export async function generateSummary(
