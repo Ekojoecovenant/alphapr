@@ -1,4 +1,5 @@
 import { PermanentError } from '../errors';
+import { Provider } from './provider-types';
 import { getAdapter } from './providers';
 
 export type Severity = "major" | "minor" | "nit";
@@ -148,7 +149,7 @@ export interface ReviewConfig {
   model: string;
   reviewTone: "thorough" | "concise";
   supportsReasoning?: boolean;
-  provider: "openrouter" | "anthropic";
+  provider: Provider;
 }
 
 export async function reviewDiff(

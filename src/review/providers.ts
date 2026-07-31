@@ -1,3 +1,5 @@
+import { Provider } from './provider-types';
+
 export interface ChatRequest {
   model: string;
   systemPrompt: string;
@@ -20,7 +22,7 @@ export interface ProviderAdapter {
   call(apiKey: string, req: ChatRequest): Promise<ChatResult>;
 }
 
-export function getAdapter(provider: "openrouter" | "anthropic"): ProviderAdapter {
+export function getAdapter(provider: Provider): ProviderAdapter {
   switch (provider) {
     case "openrouter":
       return openRouterAdapter;

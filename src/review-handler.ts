@@ -26,6 +26,7 @@ import {
 } from "./review/render";
 import { decryptSecret } from "./crypto";
 import { PermanentError } from "./errors";
+import { parseProvider, Provider } from './review/provider-types';
 
 export interface ReviewJob {
   installationId: number;
@@ -110,7 +111,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
   let reviewTone: "thorough" | "concise" = "thorough";
   let severityThreshold = "all";
   let ignorePaths: string[] = [];
-  let provider: "openrouter" | "anthropic" = "openrouter";
+  let provider: Provider = "openrouter";
 
   if (installation?.api_key_encrypted) {
     try {
@@ -126,7 +127,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
     reviewTone = installation.review_tone === "concise" ? "concise" : "thorough";
     severityThreshold = installation.severity_threshold;
     ignorePaths = installation.ignore_paths ? installation.ignore_paths.split(",") : [];
-    provider = (installation.provider === "anthropic" ? "anthropic" : "openrouter"); // narrow, never trust raw DB string as the union type
+    provider = parseProvider(installation.provider); // narrow, never trust raw DB string as the union type
   } else if (job.owner === env.FALLBACK_OWNER) {
     apiKey = env.OPENROUTER_API_KEY;
     model = "deepseek/deepseek-v4-flash";
