@@ -220,22 +220,34 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
   const anchored: Finding[] = [];
   const unanchored: Finding[] = [];
   for (const f of displayResult.findings) {
-    if (parsed.validLines.get(f.path)?.has(f.line)) {
+    const lineValid = parsed.validLines.get(f.path)?.has(f.line);
+    const endLineValid = f.endLine === undefined || parsed.validLines.get(f.path)?.has(f.endLine);
+    if (lineValid && endLineValid) {
       anchored.push(f);
     } else {
-      console.log(`Unanchorable finding: ${f.path}:${f.line} (not in diff)`);
+      console.log(
+        `Unanchorable finding: ${f.path}:${f.line}${f.endLine ? `-${f.endLine}` : ""} (not in diff)`
+      );
       unanchored.push(f);
     }
   }
 
   let anchoredCount = 0;
   if (anchored.length > 0) {
-    const comments: ReviewCommentInput[] = sortFindings(anchored).map((f) => ({
-      path: f.path,
-      line: f.line,
-      side: "RIGHT",
-      body: renderAnchoredComment(f),
-    }));
+    const comments: ReviewCommentInput[] = sortFindings(anchored).map((f) => {
+      const comment: ReviewCommentInput = {
+        path: f.path,
+        line: f.endLine ?? f.line, // GitHub's "line" field is always the END of the range
+        side: "RIGHT",
+        body: renderAnchoredComment(f),
+      };
+      if (f.endLine !== undefined) {
+        comment.start_line = f.line; // start of the range
+        comment.start_side = "RIGHT";
+      }
+      return comment;
+    });
+    
     try {
       await createReview(
         token,

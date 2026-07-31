@@ -130,4 +130,51 @@ I'll write it.\`\`\`json
 
     expect(invalidResult?.findings.length).toBe(0);
   });
+
+  it("accepts a finding with a valid endLine for a multi-line suggestion", () => {
+    const text = JSON.stringify({
+      verdict: "⚠️ 1 issues (1 major, 0 minor, 0 nits)",
+      findings: [
+        {
+          path: "src/foo.ts",
+          line: 10,
+          endLine: 12,
+          severity: "major",
+          title: "Multi-line fix",
+          body: "Spans lines 10-12.",
+          suggestion: "const x = 1;\nconst y = 2;\nconst z = 3;",
+        },
+      ],
+    });
+
+    const result = parseReviewJson(text);
+
+    expect(result?.findings[0].endLine).toBe(12);
+  });
+
+  it("rejects a finding where endLine is before line", () => {
+    const text = JSON.stringify({
+      verdict: "⚠️ 1 issue",
+      findings: [
+        { path: "src/foo.ts", line: 10, endLine: 5, severity: "major", title: "x", body: "y" },
+      ],
+    });
+
+    const result = parseReviewJson(text);
+
+    expect(result?.findings.length).toBe(0);
+  });
+
+  it("treats a missing endLine as a valid single-line finding", () => {
+    const text = JSON.stringify({
+      verdict: "⚠️ 1 issue",
+      findings: [
+        { path: "src/foo.ts", line: 10, severity: "minor", title: "x", body: "y" },
+      ],
+    });
+
+    const result = parseReviewJson(text);
+
+    expect(result?.findings[0].endLine).toBeUndefined();
+  });
 });
