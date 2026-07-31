@@ -12,6 +12,7 @@ import {
   updatePRDescription,
   type ReviewCommentInput,
   type CheckConclusion,
+  markCheckRunRetrying,
 } from "./github/api";
 import { createAppJWT, getInstallationToken } from "./github/auth";
 import { reviewDiff, generateSummary, type Finding, type ReviewResult } from "./review/llm";
@@ -71,18 +72,25 @@ export async function surfaceFailure(
 
   if (job.checkRunId !== null) {
     try {
+      if (willRetry) {
+        await markCheckRunRetrying(
+          token,
+          job.owner,
+          job.repo,
+          job.checkRunId,
+          `${commentText}`
+        )
+      }
       await completeCheckRun(
         token,
         job.owner,
         job.repo,
         job.checkRunId,
-        isPermanent ? "failure" : willRetry ? "neutral" : "failure",
-        isPermanent ? "AlphaPR review failed" : willRetry ? "AlphaPR retrying" : "AlphaPR review failed",
+        isPermanent ? "failure" : "failure",
+        isPermanent ? "AlphaPR review failed" : "AlphaPR review failed",
         isPermanent
           ? "This won't be retried."
-          : willRetry
-            ? `Retrying automatically…${attemptSuffix}`
-            : `All retry attempts exhausted.${attemptSuffix}`
+          : `All retry attempts exhausted.${attemptSuffix}`
       );
     } catch {
       /* never let status-surfacing throw further */
@@ -203,7 +211,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 
   const result = await reviewDiff(
     parsed.annotated,
-    { apiKey, model, reviewTone },
+    { apiKey, model, reviewTone, supportsReasoning: model.includes("-pro") || model.includes("deepseek-v4-pro") },
     usedIncremental ? state!.last_review_body ?? undefined : undefined
   );
 

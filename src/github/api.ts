@@ -212,3 +212,24 @@ export async function updatePRDescription(
     "Failed to update PR description"
   );
 }
+
+export async function markCheckRunRetrying(
+  token: string,
+  owner: string,
+  repo: string,
+  checkRunId: number,
+  detail: string
+): Promise<void> {
+  await githubApiCall(
+    token,
+    `https://api.github.com/repos/${owner}/${repo}/check-runs/${checkRunId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "in_progress",
+        output: { title: "AlphaPR retrying", summary: detail },
+      }),
+    },
+    "Failed to update check run"
+  );
+}

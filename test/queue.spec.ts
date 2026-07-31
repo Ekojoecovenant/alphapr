@@ -142,4 +142,16 @@ describe("queue consumer", () => {
     expect(messageA.retry).toHaveBeenCalledOnce();
     expect(messageB.ack).toHaveBeenCalledOnce();
   });
+  
+  it("acks and reports exhaustion on the final retry attempt", async () => {
+    mockedHandlePREvent.mockRejectedValue(new Error("still failing"));
+    const message = makeMessage({}, /* attempts */ 3);
+    const batch = makeBatch([message]);
+
+    await worker.queue(batch, env);
+
+    expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, false, 3, 3);
+    expect(message.ack).toHaveBeenCalledOnce();
+    expect(message.retry).not.toHaveBeenCalled();
+  });
 });
