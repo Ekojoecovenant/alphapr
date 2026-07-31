@@ -14,7 +14,7 @@ import {
   type CheckConclusion,
 } from "./github/api";
 import { createAppJWT, getInstallationToken } from "./github/auth";
-import { reviewDiff, generateSummary, type Finding } from "./review/llm";
+import { reviewDiff, generateSummary, type Finding, type ReviewResult } from "./review/llm";
 import { parseDiff } from "./review/diff";
 import {
   renderAnchoredComment,
@@ -223,7 +223,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
           : `⚠️ ${filteredFindings.length} issues (${majorCount} major, ${minorCount} minor, ${nitCount} nits)`;
       })();
 
-  const displayResult = { ...result, findings: filteredFindings, verdict };
+  const displayResult: ReviewResult = { ...result, findings: filteredFindings, verdict };
 
   const anchored: Finding[] = [];
   const unanchored: Finding[] = [];
