@@ -294,12 +294,26 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
         .bind(installationId, match.login, encrypted, model, severityThreshold, reviewTone, ignorePaths, provider)
         .run();
     } else {
+      const current = await env.DB.prepare(
+        `SELECT model, severity_threshold, review_tone, ignore_paths, provider FROM installations WHERE installation_id = ?`
+      )
+        .bind(installationId)
+        .first<{ model: string; severity_threshold: string; review_tone: string; ignore_paths: string; provider: string }>();
+
       await env.DB.prepare(
         `UPDATE installations SET
            account_login = ?, model = ?, severity_threshold = ?, review_tone = ?, ignore_paths = ?, provider = ?
          WHERE installation_id = ?`
       )
-        .bind(match.login, model, severityThreshold, reviewTone, ignorePaths, provider, installationId)
+        .bind(
+          match.login,
+          model || current?.model || "deepseek/deepseek-v4-flash",
+          severityThreshold || current?.severity_threshold || "all",
+          reviewTone || current?.review_tone || "thorough",
+          ignorePaths,
+          provider || current?.provider || "openrouter",
+          installationId
+        )
         .run();
     }
 
