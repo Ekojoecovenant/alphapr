@@ -5,6 +5,7 @@ export type Severity = "major" | "minor" | "nit";
 export interface Finding {
   path: string;
   line: number;
+  endLine?: number; // set when suggestion replaces a MULTI-LINE span (line through endLine)
   severity: Severity;
   title: string;
   body: string;
@@ -44,7 +45,8 @@ RULES:
 - Maximum 5 findings, worst first. If more exist, include the worst 5 and mention the rest in the verdict.
 - Comment ONLY on real issues in the diff. Do not invent problems. Do not review unchanged code.
 - If there are no real issues: "verdict" is "✅ LGTM — no issues found." and "findings" is [].
-- If there are issues: "verdict" is "⚠️ N issues (X major, Y minor, Z nits)" adjusted to the actual counts.`;
+- If there are issues: "verdict" is "⚠️ N issues (X major, Y minor, Z nits)" adjusted to the actual counts.
+- "endLine" is optional. Set it ONLY when "suggestion" replaces MORE THAN ONE line. In that case "line" is the FIRST line of the span and "endLine" is the LAST line — both must be numeric prefixes shown in the diff for that file, and "suggestion" must contain the FULL replacement for every line from "line" through "endLine" inclusive. If your suggestion only touches a single line, omit "endLine" entirely.`;
 
 const VALID_SEVERITIES = new Set<string>(["major", "minor", "nit"]);
 
@@ -59,6 +61,8 @@ function tryParse(text: string): ReviewResult | null {
         typeof f?.path === "string" &&
         typeof f?.line === "number" &&
         Number.isInteger(f.line) &&
+        (f.endLine === undefined ||
+          (typeof f.endLine === "number" && Number.isInteger(f.endLine) && f.endLine > f.line)) &&
         typeof f?.severity === "string" &&
         VALID_SEVERITIES.has(f.severity) &&
         typeof f?.title === "string" &&
@@ -68,6 +72,7 @@ function tryParse(text: string): ReviewResult | null {
         findings.push({
           path: f.path,
           line: f.line,
+          endLine: typeof f.endLine === "number" ? f.endLine : undefined,
           severity: f.severity as Severity,
           title: f.title,
           body: f.body,

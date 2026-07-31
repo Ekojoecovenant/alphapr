@@ -90,6 +90,8 @@ export interface ReviewCommentInput {
   path: string;
   line: number;
   side: "RIGHT";
+  start_line?: number;
+  start_side?: "RIGHT";
   body: string;
 }
 
