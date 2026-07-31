@@ -1,5 +1,5 @@
 /** All providers AlphaPR can route review calls to. Add new providers here ONLY. */
-export const PROVIDERS = ["openrouter", "anthropic"] as const;
+export const PROVIDERS = ["openrouter", "anthropic", "openai"] as const;
 
 export type Provider = (typeof PROVIDERS)[number];
 

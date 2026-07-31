@@ -28,6 +28,8 @@ export function getAdapter(provider: Provider): ProviderAdapter {
       return openRouterAdapter;
     case "anthropic":
       return anthropicAdapter;
+    case "openai":
+      return openAIAdapter;
   }
 }
 
@@ -104,6 +106,48 @@ export const anthropicAdapter: ProviderAdapter = {
       data: {
         content: textBlock?.text ?? null,
         finishReason: data.stop_reason ?? null,
+        rawBody,
+      },
+    };
+  },
+};
+
+/**
+ * NOTE: does not support OpenAI's reasoning models (o1/o3 series) — they use
+ * a different request shape (max_completion_tokens, no `reasoning` field,
+ * different message/temperature constraints). Only standard chat models
+ * (gpt-4o, gpt-4o-mini, etc.) are supported by this adapter currently.
+ * 
+ * NOTE: implemented per OpenAI's documented API shape but not yet verified
+ * against a live request/response. Test before enabling for any real tenant.
+ */
+export const openAIAdapter: ProviderAdapter = {
+  async call(apiKey, req) {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      signal: AbortSignal.timeout(120_000),
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: req.model,
+        max_tokens: req.maxTokens,
+        messages: [{ role: "system", content: req.systemPrompt }, ...req.userMessages],
+      }),
+    });
+
+    const rawBody = await res.text();
+    if (!res.ok) return { ok: false, status: res.status, body: rawBody.replace(/\s+/g, " ").slice(0, 300) };
+
+    const data = JSON.parse(rawBody) as {
+      choices?: { message?: { content?: string }; finish_reason?: string }[];
+    };
+    return {
+      ok: true,
+      data: {
+        content: data.choices?.[0]?.message?.content ?? null,
+        finishReason: data.choices?.[0]?.finish_reason ?? null,
         rawBody,
       },
     };
