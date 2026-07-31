@@ -26,7 +26,7 @@ interface MockMessage {
   retry: ReturnType<typeof vi.fn>;
 }
 
-function makeMessage(overrides: Partial<ReviewJob> = {}): MockMessage {
+function makeMessage(overrides: Partial<ReviewJob> = {}, attempts = 1): MockMessage {
   return {
     body: {
       installationId: 1,
@@ -40,7 +40,7 @@ function makeMessage(overrides: Partial<ReviewJob> = {}): MockMessage {
       checkRunId: 99,
       ...overrides,
     },
-    attempts: 1,
+    attempts,
     ack: vi.fn(),
     retry: vi.fn(),
   };
@@ -142,7 +142,7 @@ describe("queue consumer", () => {
     expect(messageA.retry).toHaveBeenCalledOnce();
     expect(messageB.ack).toHaveBeenCalledOnce();
   });
-  
+
   it("acks and reports exhaustion on the final retry attempt", async () => {
     mockedHandlePREvent.mockRejectedValue(new Error("still failing"));
     const message = makeMessage({}, /* attempts */ 3);
