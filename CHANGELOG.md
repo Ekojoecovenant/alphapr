@@ -3,11 +3,26 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.1.0] — 2026-07-31
+
+### Added
+
+- Multi-line suggestion ranges: findings that need more than a one-line fix can now specify a line span (`line` through `endLine`), posted via GitHub's ranged-comment API so the Apply-suggestion button replaces the whole span cleanly instead of leaving orphaned code
+- Queue consumer test coverage: ack/retry classification, `surfaceFailure` call correctness, and batch-independence, closing the last untested part of the pipeline
+
+### Fixed
+
+- `endLine` validation requires it to be strictly greater than `line`, matching the prompt's own single-line-vs-multi-line rule
+
+[v1.1.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v1.1.0
+
 ## [v1.0.0] — 2026-07-30
 
 The first stable release. Ten minor versions of iteration — core review pipeline, encrypted multi-tenant BYOK, self-serve OAuth setup, incremental memory with self-healing, Checks integration, per-install configuration, free-tier deployment, PR description summaries — plus a full test suite, linting, CI, and an internal restructure, all shipped and hardened through continuous review from AlphaPR itself and CodeRabbit.
 
 No new features in this release. This version marks the API, setup process, and configuration surface as stable: self-hosters and integrators can build against it without expecting breaking changes outside of major version bumps.
+
+[v1.0.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v1.0.0
 
 ## [v0.10.0] — 2026-07-29
 
