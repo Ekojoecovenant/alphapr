@@ -3,7 +3,7 @@ import { PROVIDERS } from "./review/provider-types";
 
 // ── HMAC signing for state params and form tokens ──
 
-async function hmacSign(data: string, secret: string): Promise<string> {
+export async function hmacSign(data: string, secret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
