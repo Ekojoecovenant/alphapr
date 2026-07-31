@@ -1,7 +1,7 @@
+// @ts-check
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { env } from "cloudflare:test";
 
-// Mock the entire review-handler module so we control handlePREvent's behavior
 vi.mock("../src/review-handler", async () => {
   const actual = await vi.importActual<typeof import("../src/review-handler")>(
     "../src/review-handler"
@@ -14,11 +14,20 @@ vi.mock("../src/review-handler", async () => {
 });
 
 import worker from "../src/index";
-import { handlePREvent, surfaceFailure } from "../src/review-handler";
+import { handlePREvent, surfaceFailure, type ReviewJob } from "../src/review-handler";
 import { PermanentError } from "../src/errors";
 
-function makeMessage(overrides: Partial<any> = {}) {
-  const message = {
+// Mocked queue message shape — matches the subset of Cloudflare's Message<T>
+// interface that the queue() handler actually uses.
+interface MockMessage {
+  body: ReviewJob;
+  attempts: number;
+  ack: ReturnType<typeof vi.fn>;
+  retry: ReturnType<typeof vi.fn>;
+}
+
+function makeMessage(overrides: Partial<ReviewJob> = {}): MockMessage {
+  return {
     body: {
       installationId: 1,
       owner: "test-owner",
@@ -26,7 +35,7 @@ function makeMessage(overrides: Partial<any> = {}) {
       repoFullName: "test-owner/test-repo",
       prNumber: 1,
       headSha: "abc123",
-      action: "opened" as const,
+      action: "opened",
       statusCommentId: 42,
       checkRunId: 99,
       ...overrides,
@@ -35,12 +44,16 @@ function makeMessage(overrides: Partial<any> = {}) {
     ack: vi.fn(),
     retry: vi.fn(),
   };
-  return message;
 }
 
-function makeBatch(messages: ReturnType<typeof makeMessage>[]) {
-  return { messages, queue: "pr-review-jobs" } as any;
+function makeBatch(messages: MockMessage[]): MessageBatch<ReviewJob> {
+  return {
+    messages: messages as unknown as MessageBatch<ReviewJob>["messages"],
+    queue: "pr-review-jobs",
+  } as MessageBatch<ReviewJob>;
 }
+
+const mockedHandlePREvent = vi.mocked(handlePREvent);
 
 describe("queue consumer", () => {
   beforeEach(() => {
@@ -48,7 +61,7 @@ describe("queue consumer", () => {
   });
 
   it("acks the message when handlePREvent succeeds", async () => {
-    (handlePREvent as any).mockResolvedValue(undefined);
+    mockedHandlePREvent.mockResolvedValue(undefined);
     const message = makeMessage();
     const batch = makeBatch([message]);
 
@@ -59,7 +72,7 @@ describe("queue consumer", () => {
   });
 
   it("retries a transient failure (plain Error)", async () => {
-    (handlePREvent as any).mockRejectedValue(new Error("temporary network blip"));
+    mockedHandlePREvent.mockRejectedValue(new Error("temporary network blip"));
     const message = makeMessage();
     const batch = makeBatch([message]);
 
@@ -70,7 +83,7 @@ describe("queue consumer", () => {
   });
 
   it("acks (does NOT retry) a PermanentError", async () => {
-    (handlePREvent as any).mockRejectedValue(new PermanentError("bad api key, never retry"));
+    mockedHandlePREvent.mockRejectedValue(new PermanentError("bad api key, never retry"));
     const message = makeMessage();
     const batch = makeBatch([message]);
 
@@ -81,39 +94,29 @@ describe("queue consumer", () => {
   });
 
   it("calls surfaceFailure with willRetry=true for a transient error", async () => {
-    (handlePREvent as any).mockRejectedValue(new Error("temporary"));
+    mockedHandlePREvent.mockRejectedValue(new Error("temporary"));
     const message = makeMessage();
     const batch = makeBatch([message]);
 
     await worker.queue(batch, env);
 
-    expect(surfaceFailure).toHaveBeenCalledWith(
-      message.body,
-      env,
-      false, // isPermanent
-      true // willRetry
-    );
+    expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, true);
   });
 
   it("calls surfaceFailure with willRetry=false for a PermanentError", async () => {
-    (handlePREvent as any).mockRejectedValue(new PermanentError("permanent"));
+    mockedHandlePREvent.mockRejectedValue(new PermanentError("permanent"));
     const message = makeMessage();
     const batch = makeBatch([message]);
 
     await worker.queue(batch, env);
 
-    expect(surfaceFailure).toHaveBeenCalledWith(
-      message.body,
-      env,
-      true, // isPermanent
-      false // willRetry
-    );
+    expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, true, false);
   });
 
   it("processes multiple messages in a batch independently", async () => {
-    (handlePREvent as any)
-      .mockResolvedValueOnce(undefined) // first succeeds
-      .mockRejectedValueOnce(new Error("second fails")); // second fails transiently
+    mockedHandlePREvent
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("second fails"));
 
     const messageA = makeMessage({ prNumber: 1 });
     const messageB = makeMessage({ prNumber: 2 });
@@ -126,9 +129,9 @@ describe("queue consumer", () => {
   });
 
   it("does not let a failure in one message prevent processing of the next", async () => {
-    (handlePREvent as any)
+    mockedHandlePREvent
       .mockRejectedValueOnce(new Error("first fails"))
-      .mockResolvedValueOnce(undefined); // second succeeds
+      .mockResolvedValueOnce(undefined);
 
     const messageA = makeMessage({ prNumber: 1 });
     const messageB = makeMessage({ prNumber: 2 });
