@@ -9,6 +9,7 @@
 		"start": "wrangler dev",
 		"test": "vitest run",
 		"lint": "eslint .",
+		"typecheck": "tsc --noEmit",
 		"cf-typegen": "wrangler types",
 		"ship": "pnpm run deploy && pnpm run tail"
 	},
