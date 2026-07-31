@@ -26,7 +26,7 @@ interface MockMessage {
   retry: ReturnType<typeof vi.fn>;
 }
 
-function makeMessage(overrides: Partial<ReviewJob> = {}): MockMessage {
+function makeMessage(overrides: Partial<ReviewJob> = {}, attempts = 1): MockMessage {
   return {
     body: {
       installationId: 1,
@@ -40,7 +40,7 @@ function makeMessage(overrides: Partial<ReviewJob> = {}): MockMessage {
       checkRunId: 99,
       ...overrides,
     },
-    attempts: 1,
+    attempts,
     ack: vi.fn(),
     retry: vi.fn(),
   };
@@ -100,7 +100,7 @@ describe("queue consumer", () => {
 
     await worker.queue(batch, env);
 
-    expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, true);
+    expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, true, 1, 3);
   });
 
   it("calls surfaceFailure with willRetry=false for a PermanentError", async () => {
@@ -110,7 +110,7 @@ describe("queue consumer", () => {
 
     await worker.queue(batch, env);
 
-    expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, true, false);
+    expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, true, false, 1, 3);
   });
 
   it("processes multiple messages in a batch independently", async () => {
@@ -141,5 +141,17 @@ describe("queue consumer", () => {
 
     expect(messageA.retry).toHaveBeenCalledOnce();
     expect(messageB.ack).toHaveBeenCalledOnce();
+  });
+
+  it("acks and reports exhaustion on the final retry attempt", async () => {
+    mockedHandlePREvent.mockRejectedValue(new Error("still failing"));
+    const message = makeMessage({}, /* attempts */ 3);
+    const batch = makeBatch([message]);
+
+    await worker.queue(batch, env);
+
+    expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, false, 3, 3);
+    expect(message.ack).toHaveBeenCalledOnce();
+    expect(message.retry).not.toHaveBeenCalled();
   });
 });

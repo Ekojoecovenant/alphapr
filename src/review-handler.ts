@@ -12,9 +12,10 @@ import {
   updatePRDescription,
   type ReviewCommentInput,
   type CheckConclusion,
+  markCheckRunRetrying,
 } from "./github/api";
 import { createAppJWT, getInstallationToken } from "./github/auth";
-import { reviewDiff, generateSummary, type Finding } from "./review/llm";
+import { reviewDiff, generateSummary, type Finding, type ReviewResult } from "./review/llm";
 import { parseDiff } from "./review/diff";
 import {
   renderAnchoredComment,
@@ -44,18 +45,22 @@ export async function surfaceFailure(
   job: ReviewJob,
   env: Env,
   isPermanent: boolean,
-  willRetry: boolean
+  willRetry: boolean,
+  attempt?: number,
+  maxAttempts?: number
 ): Promise<void> {
   if (job.statusCommentId === null && job.checkRunId === null) return;
 
   const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
   const token = await getInstallationToken(jwt, job.installationId);
 
+  const attemptSuffix = attempt && maxAttempts ? ` (attempt ${attempt}/${maxAttempts})` : "";
+
   const commentText = isPermanent
-    ? "⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration."
+    ? `⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration.${attemptSuffix}`
     : willRetry
-      ? "⚠️ **AlphaPR review failed.** Retrying automatically…"
-      : "⚠️ **AlphaPR review failed.**";
+      ? `⚠️ **AlphaPR review failed.** Retrying automatically…${attemptSuffix}`
+      : `⚠️ **AlphaPR review failed.** All retry attempts exhausted.${attemptSuffix}`;
 
   if (job.statusCommentId !== null) {
     try {
@@ -67,14 +72,25 @@ export async function surfaceFailure(
 
   if (job.checkRunId !== null) {
     try {
+      if (willRetry) {
+        await markCheckRunRetrying(
+          token,
+          job.owner,
+          job.repo,
+          job.checkRunId,
+          `${commentText}`
+        )
+      }
       await completeCheckRun(
         token,
         job.owner,
         job.repo,
         job.checkRunId,
-        isPermanent ? "failure" : "neutral",
-        "AlphaPR review failed",
-        isPermanent ? "This won't be retried." : willRetry ? "Retrying automatically…" : "Review failed."
+        isPermanent ? "failure" : "failure",
+        isPermanent ? "AlphaPR review failed" : "AlphaPR review failed",
+        isPermanent
+          ? "This won't be retried."
+          : `All retry attempts exhausted.${attemptSuffix}`
       );
     } catch {
       /* never let status-surfacing throw further */
@@ -195,7 +211,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 
   const result = await reviewDiff(
     parsed.annotated,
-    { apiKey, model, reviewTone },
+    { apiKey, model, reviewTone, supportsReasoning: model.includes("-pro") || model.includes("deepseek-v4-pro") },
     usedIncremental ? state!.last_review_body ?? undefined : undefined
   );
 
@@ -215,7 +231,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
           : `⚠️ ${filteredFindings.length} issues (${majorCount} major, ${minorCount} minor, ${nitCount} nits)`;
       })();
 
-  const displayResult = { ...result, findings: filteredFindings, verdict };
+  const displayResult: ReviewResult = { ...result, findings: filteredFindings, verdict };
 
   const anchored: Finding[] = [];
   const unanchored: Finding[] = [];

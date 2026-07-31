@@ -146,6 +146,7 @@ export interface ReviewConfig {
   apiKey: string;
   model: string;
   reviewTone: "thorough" | "concise";
+  supportsReasoning?: boolean;
 }
 
 export async function reviewDiff(
@@ -188,8 +189,8 @@ ${annotatedDiff}`,
     body: JSON.stringify({
       model: config.model,
       max_tokens: 8000,
-      reasoning: { max_tokens: 2000 },
-      provider: { sort: "throughput" },
+      ...(config.supportsReasoning ? { reasoning: { max_tokens: 2000 } } : {}),
+      provider: { sort: "throughput", require_parameters: true },
       messages: [
         { role: "system", content: SYSTEM_PROMPT + toneInstruction },
         ...userMessages,

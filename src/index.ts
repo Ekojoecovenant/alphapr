@@ -109,7 +109,7 @@ export default {
             console.error(
               `Free-tier review failed (no retry): ${err instanceof Error ? err.message : err}`
             );
-            await surfaceFailure(job, env, err instanceof PermanentError, false).catch(() => {});
+            await surfaceFailure(job, env, err instanceof PermanentError, false, 1, 1).catch(() => {});
           })
         );
       } else {
@@ -121,24 +121,37 @@ export default {
   },
 
   async queue(batch: MessageBatch<ReviewJob>, env: Env): Promise<void> {
+    const MAX_RETRIES = 2; // must match wrangler.jsonc's consumer max_retries
+
     for (const message of batch.messages) {
       try {
         await handlePREvent(message.body, env);
         message.ack();
       } catch (err) {
         const isPermanent = err instanceof PermanentError;
+        const isFinalAttempt = message.attempts >= MAX_RETRIES + 1; // +1: attempts is 1-indexed
         const errMsg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
 
         if (isPermanent) {
           console.error(`Permanent failure, not retrying: ${errMsg}`);
+        } else if (isFinalAttempt) {
+          console.error(`Final attempt (${message.attempts}/${MAX_RETRIES + 1}) failed, giving up: ${errMsg}`);
         } else {
-          console.error(`Review job failed (attempt ${message.attempts}): ${errMsg}`);
+          console.error(`Review job failed (attempt ${message.attempts}/${MAX_RETRIES + 1}): ${errMsg}`);
         }
 
-        await surfaceFailure(message.body, env, isPermanent, !isPermanent).catch(() => {});
+        const willRetry = !isPermanent && !isFinalAttempt;
+        await surfaceFailure(
+          message.body,
+          env,
+          isPermanent,
+          willRetry,
+          message.attempts,
+          MAX_RETRIES + 1
+        ).catch(() => {});
 
-        if (isPermanent) {
-          message.ack();
+        if (isPermanent || isFinalAttempt) {
+          message.ack(); // stop retrying — either permanent, or out of attempts
         } else {
           message.retry();
         }
