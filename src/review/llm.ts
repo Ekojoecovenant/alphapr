@@ -189,7 +189,7 @@ ${annotatedDiff}`,
       model: config.model,
       max_tokens: 8000,
       reasoning: { max_tokens: 2000 },
-      provider: { sort: "throughput" },
+      provider: { sort: "throughput", require_parameters: true },
       messages: [
         { role: "system", content: SYSTEM_PROMPT + toneInstruction },
         ...userMessages,
