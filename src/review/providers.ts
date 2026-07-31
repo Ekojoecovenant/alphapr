@@ -66,6 +66,8 @@ export const openRouterAdapter: ProviderAdapter = {
   },
 };
 
+// NOTE: implemented per Anthropic's documented API shape but not yet verified
+// against a live request/response. Test before enabling for any real tenant.
 export const anthropicAdapter: ProviderAdapter = {
   async call(apiKey, req) {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
