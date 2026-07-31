@@ -16,7 +16,7 @@ export default tseslint.config(
   {
     files: ["test/env.d.ts"],
     rules: {
-      "@typescript-eslint/no-empty-object-type": "off",
+        "@typescript-eslint/no-empty-object-type": "off", // Required empty-interface pattern for cloudflare:test module augmentation
     },
   },
   {
