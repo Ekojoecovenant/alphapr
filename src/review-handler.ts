@@ -216,7 +216,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
       model,
       reviewTone,
       provider: "openrouter",
-      supportsReasoning: model.includes("-pro") || model.includes("deepseek-v4-pro"),
+      supportsReasoning: model.includes("-pro"),
     },
     usedIncremental ? state!.last_review_body ?? undefined : undefined
   );

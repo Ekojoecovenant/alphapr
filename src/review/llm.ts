@@ -193,7 +193,7 @@ export async function reviewDiff(
 
   if (!result.data.content) {
     throw new Error(
-      `${config.provider} returned no content. finish_reason=${result.data.finishReason ?? "n/a"} body=${result.data.rawBody.slice(0, 500)}`
+      `${config.provider} returned no content. finish_reason=${result.data.finishReason ?? "n/a"} body=${result.data.rawBody.replace(/\s+/g, " ").slice(0, 500)}`
     );
   }
 
