@@ -148,7 +148,7 @@ export interface ReviewConfig {
   model: string;
   reviewTone: "thorough" | "concise";
   supportsReasoning?: boolean;
-  provider: "openrouter";
+  provider: "openrouter" | "anthropic";
 }
 
 export async function reviewDiff(
