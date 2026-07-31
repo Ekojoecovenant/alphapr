@@ -44,18 +44,22 @@ export async function surfaceFailure(
   job: ReviewJob,
   env: Env,
   isPermanent: boolean,
-  willRetry: boolean
+  willRetry: boolean,
+  attempt?: number,
+  maxAttempts?: number
 ): Promise<void> {
   if (job.statusCommentId === null && job.checkRunId === null) return;
 
   const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
   const token = await getInstallationToken(jwt, job.installationId);
 
+  const attemptSuffix = attempt && maxAttempts ? ` (attempt ${attempt}/${maxAttempts})` : "";
+
   const commentText = isPermanent
-    ? "⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration."
+    ? `⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration.${attemptSuffix}`
     : willRetry
-      ? "⚠️ **AlphaPR review failed.** Retrying automatically…"
-      : "⚠️ **AlphaPR review failed.**";
+      ? `⚠️ **AlphaPR review failed.** Retrying automatically…${attemptSuffix}`
+      : `⚠️ **AlphaPR review failed.** All retry attempts exhausted.${attemptSuffix}`;
 
   if (job.statusCommentId !== null) {
     try {
@@ -72,9 +76,13 @@ export async function surfaceFailure(
         job.owner,
         job.repo,
         job.checkRunId,
-        isPermanent ? "failure" : "neutral",
-        "AlphaPR review failed",
-        isPermanent ? "This won't be retried." : willRetry ? "Retrying automatically…" : "Review failed."
+        isPermanent ? "failure" : willRetry ? "neutral" : "failure",
+        isPermanent ? "AlphaPR review failed" : willRetry ? "AlphaPR retrying" : "AlphaPR review failed",
+        isPermanent
+          ? "This won't be retried."
+          : willRetry
+            ? `Retrying automatically…${attemptSuffix}`
+            : `All retry attempts exhausted.${attemptSuffix}`
       );
     } catch {
       /* never let status-surfacing throw further */
