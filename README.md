@@ -20,6 +20,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **Free-tier friendly** — runs with Cloudflare Queues for production use, or in a queueless mode on Cloudflare's free plan
 - **PR description summaries** — a concise, auto-generated overview appended to the PR description, kept current across pushes without touching what you wrote
 - **Tested** — the diff parser, JSON extraction, and OAuth signing logic have automated test coverage, including regression tests against real production incidents, enforced by CI on every PR
+- **Multi-line Apply-suggestions** — fixes that need more than one line (a guard clause, a try/finally wrap) anchor and apply correctly across the whole span
 
 ## How it works
 
@@ -227,8 +228,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and 
 
 ## Roadmap
 
-- **Queue consumer test coverage** — currently untested; the diff parser, JSON extraction, and OAuth signing are covered
-- **Multi-line suggestion ranges** — Apply-suggestion fixes that span more than one line
 - **Multi-provider support** — direct Anthropic/OpenAI/etc. alongside OpenRouter
 - **Hosted setup site** — a proper landing and configuration site beyond the raw `/setup` page
 - **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis
