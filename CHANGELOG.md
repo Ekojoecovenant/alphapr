@@ -3,6 +3,32 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.2.0] — 2026-07-31
+
+### Added
+
+- Multi-provider architecture: Anthropic and OpenAI adapters alongside OpenRouter, behind a single shared `ProviderAdapter` interface
+- Provider selection is stored per-installation (`installations.provider`, migration 0005) and fully wired through the read and write paths
+- Centralized `Provider` type in `provider-types.ts` — a compiler-enforced, exhaustiveness-checked single source of truth for adding future providers
+
+### Changed
+
+- `generateSummary` now routes through the same provider adapter as the main review, instead of being hardcoded to OpenRouter regardless of the installation's configured provider
+- Error diagnostics collapse whitespace before truncating, across all three adapters, so reasoning-heavy failure responses show real signal instead of blank lines
+
+### Fixed
+
+- A config-only edit (no new API key) was silently resetting `provider` back to `openrouter` on every save, because the fallback-to-current-value logic hadn't been carried over when the write path was extended — caught by AlphaPR's own review of its own PR
+- `hmacSign` was not exported, breaking `test/setup.spec.ts`'s existing HMAC tests
+
+### Known limitations
+
+- The Anthropic and OpenAI adapters are implemented per each provider's documented API shape but have **not been verified against a live API key** — OpenRouter remains the only provider confirmed working end-to-end in production
+- Provider selection is not yet exposed on the `/setup` page; it can currently only be set by direct database access, deliberately, until live verification is complete
+- OpenAI's o-series reasoning models (o1/o3) are not supported — only standard chat models
+
+[v1.2.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v1.2.0
+
 ## [v1.1.0] — 2026-07-31
 
 ### Added
