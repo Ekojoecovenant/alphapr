@@ -211,45 +211,29 @@ const SUMMARY_PROMPT = `You summarize a pull request's overall changes for its d
 /** Best-effort PR description summary. Returns null on any failure — never throws. */
 export async function generateSummary(
   fullDiff: string,
-  config: { apiKey: string; model: string }
+  config: { apiKey: string; model: string; provider: Provider }
 ): Promise<string | null> {
   // Large diffs would blow the model's context; cap defensively.
   const truncatedDiff = fullDiff.length > 20_000 ? fullDiff.slice(0, 20_000) + "\n... (truncated)" : fullDiff;
 
   try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      signal: AbortSignal.timeout(60_000),
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/Ekojoecovenant/alphapr",
-        "X-Title": "AlphaPR",
-      },
-      body: JSON.stringify({
-        model: config.model,
-        max_tokens: 800,
-        // No `reasoning` field here: this is a short summarize-only call,
-        // not worth burning output budget on reasoning tokens.
-        messages: [
-          { role: "system", content: SUMMARY_PROMPT },
-          { role: "user", content: `Summarize this pull request diff:\n\n${truncatedDiff}` },
-        ],
-      }),
+    const adapter = getAdapter(config.provider);
+    const result = await adapter.call(config.apiKey, {
+      model: config.model,
+      systemPrompt: SUMMARY_PROMPT,
+      userMessages: [{ role: "user", content: `Summarize this pull request diff:\n\n${truncatedDiff}` }],
+      maxTokens: 800,
     });
 
-    if (!res.ok) {
-      console.warn(`generateSummary: OpenRouter error ${res.status} ${(await res.text()).slice(0, 300)}`);
+    if (!result.ok) {
+      console.warn(`generateSummary: ${config.provider} error ${result.status} ${result.body}`);
       return null;
     }
-
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const content = data.choices?.[0]?.message?.content;
-    if (!content?.trim()) {
-      console.warn("generateSummary: OpenRouter returned empty content");
+    if (!result.data.content?.trim()) {
+      console.warn(`generateSummary: ${config.provider} returned empty content`);
       return null;
     }
-    return content.trim();
+    return result.data.content.trim();
   } catch (err) {
     console.warn(`generateSummary: request failed: ${err instanceof Error ? err.message : err}`);
     return null;

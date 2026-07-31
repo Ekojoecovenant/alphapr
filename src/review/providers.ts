@@ -54,7 +54,7 @@ export const openRouterAdapter: ProviderAdapter = {
     });
 
     const rawBody = await res.text();
-    if (!res.ok) return { ok: false, status: res.status, body: rawBody.slice(0, 300) };
+    if (!res.ok) return { ok: false, status: res.status, body: rawBody.replace(/\s+/g, " ").slice(0, 300) };
 
     const data = JSON.parse(rawBody) as {
       choices?: { message?: { content?: string }; finish_reason?: string }[];
@@ -123,6 +123,10 @@ export const anthropicAdapter: ProviderAdapter = {
  */
 export const openAIAdapter: ProviderAdapter = {
   async call(apiKey, req) {
+    if (req.reasoningMaxTokens) {
+      console.warn("openAIAdapter: reasoningMaxTokens was set but is not supported by this adapter (o-series models not yet implemented) — ignoring");
+    }
+    
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       signal: AbortSignal.timeout(120_000),

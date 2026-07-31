@@ -354,7 +354,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
         if (fullRes.ok) fullDiffForSummary = await fullRes.text();
       }
 
-      const prSummary = await generateSummary(fullDiffForSummary, { apiKey, model });
+      const prSummary = await generateSummary(fullDiffForSummary, { apiKey, model, provider });
       if (prSummary) {
         const currentBody = await getPRDescription(token, job.owner, job.repo, job.prNumber);
         const updatedBody = mergeSummaryIntoDescription(currentBody, prSummary);
