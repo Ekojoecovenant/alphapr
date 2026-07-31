@@ -1,5 +1,5 @@
 import { encryptSecret } from "./crypto";
-import { getInstallation } from './db';
+import { PROVIDERS } from "./review/provider-types";
 
 // ── HMAC signing for state params and form tokens ──
 
@@ -150,6 +150,12 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
       );
     }
 
+    const existingConfig = await env.DB.prepare(
+      `SELECT model, severity_threshold, review_tone, ignore_paths, provider FROM installations WHERE installation_id = ?`
+    )
+      .bind(instData.installations[0].id)
+      .first<{ model: string; severity_threshold: string; review_tone: string; ignore_paths: string; provider: string }>();
+
     const allowedPairs = instData.installations
       .map((i) => `${i.id}:${i.account.login}`)
       .join(",");
@@ -160,8 +166,6 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
     const options = instData.installations
       .map((i) => `<option value="${i.id}">${esc(i.account.login)} (${i.id})</option>`)
       .join("");
-
-    const existingConfig = await getInstallation(env.DB, instData.installations[0].id);
 
     return html(`
       <h2>Configure AlphaPR</h2>
@@ -215,6 +219,7 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
     const severityThreshold = String(form.get("severityThreshold") ?? "all");
     const reviewTone = String(form.get("reviewTone") ?? "thorough");
     const ignorePaths = String(form.get("ignorePaths") ?? "").trim();
+    const provider = String(form.get("provider") ?? "openrouter");
     const token = String(form.get("token") ?? "");
 
     const lastDot = token.lastIndexOf(".");
@@ -250,6 +255,9 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
     if (!["thorough", "concise"].includes(reviewTone)) {
       return html(`<p class="err">Invalid review tone.</p>`, 400);
     }
+    if (!(PROVIDERS as readonly string[]).includes(provider)) {
+      return html(`<p class="err">Invalid provider.</p>`, 400);
+    }
 
     // Does this installation already have a key?
     const existing = await env.DB.prepare(
@@ -272,31 +280,29 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
       const encrypted = await encryptSecret(apiKey, env.KEY_ENCRYPTION_SECRET);
       await env.DB.prepare(
         `INSERT INTO installations
-           (installation_id, account_login, api_key_encrypted, model, severity_threshold, review_tone, ignore_paths)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+           (installation_id, account_login, api_key_encrypted, model, severity_threshold, review_tone, ignore_paths, provider)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(installation_id) DO UPDATE SET
            account_login = excluded.account_login,
            api_key_encrypted = excluded.api_key_encrypted,
            model = excluded.model,
            severity_threshold = excluded.severity_threshold,
            review_tone = excluded.review_tone,
-           ignore_paths = excluded.ignore_paths`
+           ignore_paths = excluded.ignore_paths,
+           provider = excluded.provider`
       )
-        .bind(installationId, match.login, encrypted, model, severityThreshold, reviewTone, ignorePaths)
+        .bind(installationId, match.login, encrypted, model, severityThreshold, reviewTone, ignorePaths, provider)
         .run();
     } else {
-      // No new key — update config only, preserving anything not explicitly changed
-      // is handled by the client submitting the pre-filled form values (see callback).
-      // We still guard against wiping config if the row somehow has no prior state.
       const current = await env.DB.prepare(
-        `SELECT model, severity_threshold, review_tone, ignore_paths FROM installations WHERE installation_id = ?`
+        `SELECT model, severity_threshold, review_tone, ignore_paths, provider FROM installations WHERE installation_id = ?`
       )
         .bind(installationId)
-        .first<{ model: string; severity_threshold: string; review_tone: string; ignore_paths: string }>();
+        .first<{ model: string; severity_threshold: string; review_tone: string; ignore_paths: string; provider: string }>();
 
       await env.DB.prepare(
         `UPDATE installations SET
-           account_login = ?, model = ?, severity_threshold = ?, review_tone = ?, ignore_paths = ?
+           account_login = ?, model = ?, severity_threshold = ?, review_tone = ?, ignore_paths = ?, provider = ?
          WHERE installation_id = ?`
       )
         .bind(
@@ -304,7 +310,8 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
           model || current?.model || "deepseek/deepseek-v4-flash",
           severityThreshold || current?.severity_threshold || "all",
           reviewTone || current?.review_tone || "thorough",
-          ignorePaths, // empty string is a valid, explicit "no ignores" — don't fall back
+          ignorePaths,
+          provider || current?.provider || "openrouter",
           installationId
         )
         .run();

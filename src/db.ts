@@ -8,6 +8,7 @@ export interface InstallationConfig {
   severity_threshold: string;
   review_tone: string;
   ignore_paths: string;
+  provider: string;
 }
 
 
@@ -76,7 +77,7 @@ export async function getInstallation(
   const row = await db
     .prepare(
       `SELECT installation_id, account_login, api_key_encrypted, model,
-              severity_threshold, review_tone, ignore_paths
+              severity_threshold, review_tone, ignore_paths, provider
        FROM installations WHERE installation_id = ?`
     )
     .bind(installationId)

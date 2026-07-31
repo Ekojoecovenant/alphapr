@@ -26,6 +26,7 @@ import {
 } from "./review/render";
 import { decryptSecret } from "./crypto";
 import { PermanentError } from "./errors";
+import { parseProvider, Provider } from './review/provider-types';
 
 export interface ReviewJob {
   installationId: number;
@@ -110,6 +111,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
   let reviewTone: "thorough" | "concise" = "thorough";
   let severityThreshold = "all";
   let ignorePaths: string[] = [];
+  let provider: Provider = "openrouter";
 
   if (installation?.api_key_encrypted) {
     try {
@@ -125,6 +127,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
     reviewTone = installation.review_tone === "concise" ? "concise" : "thorough";
     severityThreshold = installation.severity_threshold;
     ignorePaths = installation.ignore_paths ? installation.ignore_paths.split(",") : [];
+    provider = parseProvider(installation.provider); // narrow, never trust raw DB string as the union type
   } else if (job.owner === env.FALLBACK_OWNER) {
     apiKey = env.OPENROUTER_API_KEY;
     model = "deepseek/deepseek-v4-flash";
@@ -211,7 +214,13 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 
   const result = await reviewDiff(
     parsed.annotated,
-    { apiKey, model, reviewTone, supportsReasoning: model.includes("-pro") || model.includes("deepseek-v4-pro") },
+    {
+      apiKey,
+      model,
+      reviewTone,
+      provider,
+      supportsReasoning: model.includes("-pro"),
+    },
     usedIncremental ? state!.last_review_body ?? undefined : undefined
   );
 
@@ -345,7 +354,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
         if (fullRes.ok) fullDiffForSummary = await fullRes.text();
       }
 
-      const prSummary = await generateSummary(fullDiffForSummary, { apiKey, model });
+      const prSummary = await generateSummary(fullDiffForSummary, { apiKey, model, provider });
       if (prSummary) {
         const currentBody = await getPRDescription(token, job.owner, job.repo, job.prNumber);
         const updatedBody = mergeSummaryIntoDescription(currentBody, prSummary);

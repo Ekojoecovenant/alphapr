@@ -1,4 +1,6 @@
 import { PermanentError } from '../errors';
+import { Provider } from './provider-types';
+import { getAdapter } from './providers';
 
 export type Severity = "major" | "minor" | "nit";
 
@@ -147,6 +149,7 @@ export interface ReviewConfig {
   model: string;
   reviewTone: "thorough" | "concise";
   supportsReasoning?: boolean;
+  provider: Provider;
 }
 
 export async function reviewDiff(
@@ -164,67 +167,43 @@ export async function reviewDiff(
   if (previousReview) {
     userMessages.push({
       role: "user",
-      content: `You previously reviewed this PR and said the following. Do NOT repeat points you already made — review only the new changes:
-
-${previousReview}`,
+      content: `You previously reviewed this PR and said the following. Do NOT repeat points you already made — review only the new changes:\n\n${previousReview}`,
     });
   }
 
   userMessages.push({
     role: "user",
-    content: `Review this pull request diff:
-
-${annotatedDiff}`,
+    content: `Review this pull request diff:\n\n${annotatedDiff}`,
   });
 
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    signal: AbortSignal.timeout(120_000),
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://github.com/Ekojoecovenant/alphapr",
-      "X-Title": "AlphaPR",
-    },
-    body: JSON.stringify({
-      model: config.model,
-      max_tokens: 8000,
-      ...(config.supportsReasoning ? { reasoning: { max_tokens: 2000 } } : {}),
-      provider: { sort: "throughput", require_parameters: true },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT + toneInstruction },
-        ...userMessages,
-      ],
-    }),
+  const adapter = getAdapter(config.provider);
+  const result = await adapter.call(config.apiKey, {
+    model: config.model,
+    systemPrompt: SYSTEM_PROMPT + toneInstruction,
+    userMessages,
+    maxTokens: 8000,
+    reasoningMaxTokens: config.supportsReasoning ? 2000 : undefined,
   });
 
-  if (!res.ok) {
-    const text = (await res.text()).slice(0, 300);
-    if (res.status === 401 || res.status === 403) {
-      throw new PermanentError(`OpenRouter auth error: ${res.status} ${text}`);
+  if (!result.ok) {
+    if (result.status === 401 || result.status === 403) {
+      throw new PermanentError(`${config.provider} auth error: ${result.status} ${result.body}`);
     }
-    throw new Error(`OpenRouter error: ${res.status} ${text}`);
+    throw new Error(`${config.provider} error: ${result.status} ${result.body}`);
   }
 
-  const data = (await res.json()) as {
-    choices?: { message?: { content?: string }; finish_reason?: string }[];
-    error?: unknown;
-  };
-
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) {
+  if (!result.data.content) {
     throw new Error(
-      `OpenRouter returned no content. finish_reason=${data.choices?.[0]?.finish_reason ?? "n/a"} body=${JSON.stringify(data).slice(0, 500)}`
+      `${config.provider} returned no content. finish_reason=${result.data.finishReason ?? "n/a"} body=${result.data.rawBody.replace(/\s+/g, " ").slice(0, 500)}`
     );
   }
 
-  const parsed = parseReviewJson(content);
+  const parsed = parseReviewJson(result.data.content);
   if (parsed) return parsed;
 
   console.log("Review output was not valid JSON; falling back to raw text");
-  return { verdict: "", findings: [], raw: content.trim() };
+  return { verdict: "", findings: [], raw: result.data.content.trim() };
 }
-
 
 // ========== SUMMARY ============ //
 const SUMMARY_PROMPT = `You summarize a pull request's overall changes for its description. Group your output under relevant headers using "###" from this set — use only the ones that apply, in this order: New Features, Bug Fixes, Chores, Tests, Documentation. Under each header, list 1-4 concise bullet points. Skip a header entirely if nothing in the diff fits it. If none of these headers apply, output a single bullet point describing the change without a header. Describe WHAT changed and WHY it matters — not line-by-line implementation detail. Do not wrap the whole output in a code fence. Output ONLY the headers and bullet points, nothing else.`;
@@ -232,45 +211,29 @@ const SUMMARY_PROMPT = `You summarize a pull request's overall changes for its d
 /** Best-effort PR description summary. Returns null on any failure — never throws. */
 export async function generateSummary(
   fullDiff: string,
-  config: { apiKey: string; model: string }
+  config: { apiKey: string; model: string; provider: Provider }
 ): Promise<string | null> {
   // Large diffs would blow the model's context; cap defensively.
   const truncatedDiff = fullDiff.length > 20_000 ? fullDiff.slice(0, 20_000) + "\n... (truncated)" : fullDiff;
 
   try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      signal: AbortSignal.timeout(60_000),
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/Ekojoecovenant/alphapr",
-        "X-Title": "AlphaPR",
-      },
-      body: JSON.stringify({
-        model: config.model,
-        max_tokens: 800,
-        // No `reasoning` field here: this is a short summarize-only call,
-        // not worth burning output budget on reasoning tokens.
-        messages: [
-          { role: "system", content: SUMMARY_PROMPT },
-          { role: "user", content: `Summarize this pull request diff:\n\n${truncatedDiff}` },
-        ],
-      }),
+    const adapter = getAdapter(config.provider);
+    const result = await adapter.call(config.apiKey, {
+      model: config.model,
+      systemPrompt: SUMMARY_PROMPT,
+      userMessages: [{ role: "user", content: `Summarize this pull request diff:\n\n${truncatedDiff}` }],
+      maxTokens: 800,
     });
 
-    if (!res.ok) {
-      console.warn(`generateSummary: OpenRouter error ${res.status} ${(await res.text()).slice(0, 300)}`);
+    if (!result.ok) {
+      console.warn(`generateSummary: ${config.provider} error ${result.status} ${result.body}`);
       return null;
     }
-
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const content = data.choices?.[0]?.message?.content;
-    if (!content?.trim()) {
-      console.warn("generateSummary: OpenRouter returned empty content");
+    if (!result.data.content?.trim()) {
+      console.warn(`generateSummary: ${config.provider} returned empty content`);
       return null;
     }
-    return content.trim();
+    return result.data.content.trim();
   } catch (err) {
     console.warn(`generateSummary: request failed: ${err instanceof Error ? err.message : err}`);
     return null;

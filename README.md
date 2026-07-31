@@ -21,6 +21,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **PR description summaries** — a concise, auto-generated overview appended to the PR description, kept current across pushes without touching what you wrote
 - **Tested** — the diff parser, JSON extraction, and OAuth signing logic have automated test coverage, including regression tests against real production incidents, enforced by CI on every PR
 - **Multi-line Apply-suggestions** — fixes that need more than one line (a guard clause, a try/finally wrap) anchor and apply correctly across the whole span
+- **Multi-provider support** — Anthropic and OpenAI adapter implemented, not yet live-tested (needs a real API key)
 
 ## How it works
 
@@ -228,7 +229,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and 
 
 ## Roadmap
 
-- **Multi-provider support** — direct Anthropic/OpenAI/etc. alongside OpenRouter
+- **Self-hosted/open-weight direct adapters** — e.g. Ollama, Together AI, or other OpenAI-compatible endpoints for teams running their own open models, alongside OpenRouter/Anthropic/OpenAI
 - **Hosted setup site** — a proper landing and configuration site beyond the raw `/setup` page
 - **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis
 - **Managed tier** — eventually: use AlphaPR's own hosted models, no key required
