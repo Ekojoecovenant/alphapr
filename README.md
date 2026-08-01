@@ -6,7 +6,7 @@
 
 Bring your own OpenRouter key, pick any model, install the GitHub App on your repos. Findings land as inline comments on the changed lines, with one-click Apply-suggestion fixes. First push gets a full review; every push after that gets an incremental one, scoped to only what changed, with the bot's previous review as context so it never repeats itself.
 
-> **Status:** v1.0.0. Stable — the review pipeline, BYOK setup, and configuration surface are settled. New features ship as minor versions; breaking changes will be called out explicitly in the changelog.
+> **Status:** v1.3.0. Stable — the review pipeline, BYOK setup, and configuration surface are settled. New features ship as minor versions; breaking changes will be called out explicitly in the changelog.
 
 ## Features
 
@@ -22,6 +22,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **Tested** — the diff parser, JSON extraction, and OAuth signing logic have automated test coverage, including regression tests against real production incidents, enforced by CI on every PR
 - **Multi-line Apply-suggestions** — fixes that need more than one line (a guard clause, a try/finally wrap) anchor and apply correctly across the whole span
 - **Multi-provider foundation** — Anthropic and OpenAI provider adapters built alongside OpenRouter, sharing one architecture (not yet live-verified or exposed in setup — see Roadmap)
+- **CI-aware reviews** — when the repo's own CI has already failed on the same commit, AlphaPR factors that in as corroborating signal rather than reviewing in isolation
 
 ## How it works
 
@@ -36,15 +37,16 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 ### Step 2 — Review execution (queue consumer, or inline in free-tier mode)
 
 1. Authenticate as the GitHub App (short-lived JWT → installation access token)
-2. Resolve the installation's own OpenRouter key (stored encrypted), model, and config (severity threshold, tone, ignore paths)
+2. Resolve the installation's own OpenRouter key (stored encrypted), model, provider, and config (severity threshold, tone, ignore paths)
 3. Check D1 state — first review of a PR gets the **full diff**; updates get **only the changes since the last reviewed commit**, plus the bot's previous review as context
 4. Parse and annotate the diff — every line is prefixed with its true line number, and ignored paths (files and their headers) are dropped before the model ever sees them
-5. The model returns structured JSON findings; line references are validated against the real diff before anything is posted
-6. Findings are filtered by severity threshold for display (the full set is preserved separately for memory)
-7. Valid findings are posted as **inline review comments** on the exact lines, pinned to the reviewed commit; anything unanchorable goes into the summary instead of failing
-8. The status comment morphs into the verdict, and the check run concludes (success / neutral / action required)
-9. Save the reviewed SHA and the **full, unfiltered** review to D1
-10. *(Queue mode only)* Generate a short summary of the full PR and append it to the PR description in a marker-delimited block, replacing only that block on future updates
+5. Fetch any of the repo's own failing CI checks on the same commit, and fold them in as corroborating context for the model's reasoning
+6. The model returns structured JSON findings; line references are validated against the real diff before anything is posted
+7. Findings are filtered by severity threshold for display (the full set is preserved separately for memory)
+8. Valid findings are posted as **inline review comments** on the exact lines, pinned to the reviewed commit; anything unanchorable goes into the summary instead of failing
+9. The status comment morphs into the verdict, and the check run concludes (success / neutral / action required)
+10. Save the reviewed SHA and the **full, unfiltered** review to D1
+11. *(Queue mode only)* Generate a short summary of the full PR and append it to the PR description in a marker-delimited block, replacing only that block on future updates
 
 If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and falls back to a full review — then self-heals its state on the next push.
 
@@ -63,7 +65,9 @@ If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and 
 
 **Encrypted BYOK, because it's multi-tenant.** Each installation stores its own OpenRouter key, AES-GCM encrypted before it touches the database. Keys are configured through an OAuth-verified setup page and deleted when the App is uninstalled.
 
-**Tests, because "fixed" and "shipped" aren't the same thing.** More than one fix in this project was agreed on, discussed, and then never actually landed in the code — caught only once a real test existed to prove it. The test suite covers the trickiest logic: diff parsing edge cases, JSON extraction from messy model output (including a real leaked-reasoning incident), and the HMAC signing behind the setup flow. CI runs it on every PR, so a regression can't merge quietly.
+**A provider adapter interface, because "BYOK" shouldn't mean "OpenRouter or nothing."** `ProviderAdapter` normalizes request/response shapes across OpenRouter, Anthropic, and OpenAI behind one interface, with the `Provider` union type centralized in a single file — adding a new provider is a type-checked, exhaustiveness-enforced change, not a search-and-replace across the codebase.
+
+**Tests, because "fixed" and "shipped" aren't the same thing.** More than one fix in this project was agreed on, discussed, and then never actually landed in the code — caught only once a real test existed to prove it. The test suite covers the trickiest logic: diff parsing edge cases, JSON extraction from messy model output (including a real leaked-reasoning incident), and the HMAC signing behind the setup flow. CI runs both `tsc --noEmit` and the test suite on every PR, so a regression can't merge quietly.
 
 ## Self-hosting
 
@@ -139,13 +143,14 @@ pnpm wrangler d1 create pr-agent-db
 
 (Skip creating the queues if deploying in free-tier mode — see below.)
 
-Update `wrangler.jsonc` with the D1 `database_id` from the output, then apply the migrations:
+Update `wrangler.jsonc` with the D1 `database_id` from the output, then apply the migrations, in order:
 
 ```bash
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0001_init.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0002_add_review_body.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0003_add_installations.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0004_add_config.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0005_add_provider.sql
 ```
 
 ### 6. Deploy and connect
@@ -183,6 +188,8 @@ If a review fails in free-tier mode, re-push or re-open the PR to try again.
 
 The model is set per installation on the setup page (any model available on OpenRouter works). **Fast, non-reasoning models are recommended** — reasoning models produce deeper analysis but can take minutes per review and require large token budgets; fast models return in seconds and the structured review contract carries the quality. In free-tier mode, fast models are effectively required.
 
+Direct Anthropic and OpenAI provider selection is implemented in the codebase but **not yet exposed on the setup page** — see Roadmap.
+
 ### Configuration
 
 After installing, visit `/setup` to configure per installation:
@@ -199,28 +206,32 @@ Editing settings later doesn't require re-entering your key — leave the key fi
 ```bash
 pnpm test
 pnpm lint
+pnpm typecheck
 ```
 
-Both run automatically via GitHub Actions on every pull request.
+All three run automatically via GitHub Actions on every pull request.
 
 ## Project structure
 
 ```plain
 src/
-  index.ts              # webhook routing and dispatch only
+  index.ts                # webhook routing and dispatch only
   review-handler.ts       # the full review pipeline (handlePREvent)
+  types.ts                # shared types: ReviewJob, CheckConclusion, ReviewCommentInput, OtherCheckRun
   github/
-    auth.ts               # GitHub App JWT + installation token exchange
-    api.ts                 # GitHub REST API client (comments, reviews, checks, PR body)
+    auth.ts                # GitHub App JWT + installation token exchange
+    api.ts                 # GitHub REST API client (comments, reviews, checks, PR body, failed check runs)
   review/
     diff.ts                # diff parsing, line-number annotation, ignore-path filtering
-    llm.ts                 # OpenRouter calls, JSON extraction, PR summary generation
+    llm.ts                 # provider-agnostic review + summary generation, JSON extraction
+    providers.ts           # ProviderAdapter implementations (OpenRouter, Anthropic, OpenAI)
+    provider-types.ts      # single source of truth for the Provider union type
     render.ts              # findings/summary → Markdown, PR description merge
-  setup.ts                # OAuth-based self-serve configuration page
-  db.ts                   # D1 queries
-  crypto.ts               # AES-GCM key encryption
-  errors.ts               # PermanentError classification
-  verify.ts               # webhook signature verification
+  setup.ts                 # OAuth-based self-serve configuration page
+  db.ts                    # D1 queries
+  crypto.ts                # AES-GCM key encryption
+  errors.ts                # PermanentError classification
+  verify.ts                # webhook signature verification
 ```
 
 ## Contributing
@@ -232,12 +243,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and 
 - **Multi-provider live verification** — Anthropic and OpenAI adapters are implemented but untested against real API keys; needs live verification before exposing provider selection in `/setup`
 - **Provider capability interface** — replace the `model.includes("-pro")` reasoning-support heuristic with a proper per-adapter capability check
 - **Self-hosted/open-weight direct adapters** — e.g. Ollama, Together AI, or other OpenAI-compatible endpoints for teams running their own open models, alongside OpenRouter/Anthropic/OpenAI
+- **Structured findings from CI context** — currently, the repo's own failing CI checks are folded in as prose context for the model's reasoning; promoting them into first-class anchored `Finding`s (with their own source attribution) is a natural next step
+- **Free-tier retry/backoff logic** — free-tier mode currently has zero retry on transient failures (429s, 5xx); the queue layer handles this today, but free-tier has no equivalent
 - **Hosted setup site** — a proper landing and configuration site beyond the raw `/setup` page
-- **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis
+- **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis. See [ADR](docs/adr/0001-agentic-toolbox-deep-dive-server.md) for the full design.
 - **Managed tier** — eventually: use AlphaPR's own hosted models, no key required
 - **CD** — automatic deployment on merge to `main`, once the manual deploy process has proven stable
-- **SHA-pinned GitHub Actions + Dependabot** — harden the CI workflow's supply chain
-- **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis. See [ADR](docs/adr/0001-agentic-toolbox-deep-dive-server.md) for the full design.
 
 ---
 
