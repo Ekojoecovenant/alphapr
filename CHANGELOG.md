@@ -3,6 +3,24 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.3.0] — 2026-07-31
+
+### Added
+
+- AlphaPR now considers the repo's own failing CI checks (from the same commit) as corroborating context during review — synthesizing its own LLM analysis with deterministic signal from other tools (linters, typecheckers, etc.) already running in the repo's pipeline
+- Centralized shared types (`ReviewJob`, `CheckConclusion`, `ReviewCommentInput`, `OtherCheckRun`) into `src/types.ts`
+
+### Fixed
+
+- `getFailedCheckRuns` (previously misnamed `getOtherCheckRuns`) now paginates through GitHub's check-runs API instead of only reading the default first page — repos with more than 30 check runs on a single commit would have silently missed failures beyond that limit
+
+### Notes
+
+- This feature only adds value when the repo's own CI completes before AlphaPR's review does — if AlphaPR reviews first, there's nothing yet to fetch
+- Deliberately scoped to context only, not structured findings: CI failures inform the LLM's reasoning but are not promoted into anchored `Finding`s in this version
+
+[v1.3.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v1.3.0
+
 ## [v1.2.0] — 2026-07-31
 
 ### Added
