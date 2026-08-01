@@ -1,4 +1,5 @@
 import { PermanentError } from '../errors';
+import { OtherCheckRun } from '../types';
 import { Provider } from './provider-types';
 import { getAdapter } from './providers';
 
@@ -155,14 +156,14 @@ export interface ReviewConfig {
 export async function reviewDiff(
   annotatedDiff: string,
   config: ReviewConfig,
-  previousReview?: string
+  previousReview?: string,
+  externalContext?: string
 ): Promise<ReviewResult> {
-  const toneInstruction =
-    config.reviewTone === "concise"
-      ? "\n\nTONE: Be concise. Maximum 3 findings. Keep each body to one sentence."
-      : "\n\nTONE: Be thorough. Maximum 5 findings. Explain each finding's consequence fully.";
-
   const userMessages: { role: string; content: string }[] = [];
+
+  if (externalContext) {
+    userMessages.push({ role: "user", content: externalContext });
+  }
 
   if (previousReview) {
     userMessages.push({
@@ -175,6 +176,12 @@ export async function reviewDiff(
     role: "user",
     content: `Review this pull request diff:\n\n${annotatedDiff}`,
   });
+  // ... rest unchanged
+
+  const toneInstruction =
+    config.reviewTone === "concise"
+      ? "\n\nTONE: Be concise. Maximum 3 findings. Keep each body to one sentence."
+      : "\n\nTONE: Be thorough. Maximum 5 findings. Explain each finding's consequence fully.";
 
   const adapter = getAdapter(config.provider);
   const result = await adapter.call(config.apiKey, {
@@ -184,7 +191,7 @@ export async function reviewDiff(
     maxTokens: 8000,
     reasoningMaxTokens: config.supportsReasoning ? 2000 : undefined,
   });
-
+  
   if (!result.ok) {
     if (result.status === 401 || result.status === 403) {
       throw new PermanentError(`${config.provider} auth error: ${result.status} ${result.body}`);
@@ -238,4 +245,17 @@ export async function generateSummary(
     console.warn(`generateSummary: request failed: ${err instanceof Error ? err.message : err}`);
     return null;
   }
+}
+
+export function summarizeExternalChecks(checks: OtherCheckRun[]): string | null {
+  if (checks.length === 0) return null;
+
+  const lines = checks
+    .slice(0, 5) // cap — don't let a noisy CI setup blow the prompt budget
+    .map((c) => {
+      const detail = (c.summary ?? c.text ?? "").replace(/\s+/g, " ").slice(0, 300);
+      return `- ${c.name}: ${detail || "(failed, no detail provided)"}`;
+    });
+
+  return `This repository's own CI reported the following failures on this commit:\n${lines.join("\n")}\n\nIf any of your findings relate to these, note the connection. Do not simply restate them — only mention them where they add confidence to a real issue you've independently identified in the diff.`;
 }

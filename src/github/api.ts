@@ -1,4 +1,5 @@
 import { PermanentError } from "../errors";
+import type { CheckConclusion, ReviewCommentInput, OtherCheckRun } from "../types";
 
 async function githubApiCall(
   token: string,
@@ -86,14 +87,7 @@ export async function editComment(
   }
 }
 
-export interface ReviewCommentInput {
-  path: string;
-  line: number;
-  side: "RIGHT";
-  start_line?: number;
-  start_side?: "RIGHT";
-  body: string;
-}
+export type { ReviewCommentInput, CheckConclusion, OtherCheckRun };
 
 export async function createReview(
   token: string,
@@ -150,8 +144,6 @@ export async function createCheckRun(
   return data.id;
 }
 
-export type CheckConclusion = "success" | "neutral" | "action_required" | "failure";
-
 export async function completeCheckRun(
   token: string,
   owner: string,
@@ -174,6 +166,27 @@ export async function completeCheckRun(
       }),
     },
     "Failed to complete check run"
+  );
+}
+
+export async function markCheckRunRetrying(
+  token: string,
+  owner: string,
+  repo: string,
+  checkRunId: number,
+  detail: string
+): Promise<void> {
+  await githubApiCall(
+    token,
+    `https://api.github.com/repos/${owner}/${repo}/check-runs/${checkRunId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "in_progress",
+        output: { title: "AlphaPR retrying", summary: detail },
+      }),
+    },
+    "Failed to update check run"
   );
 }
 
@@ -213,23 +226,44 @@ export async function updatePRDescription(
   );
 }
 
-export async function markCheckRunRetrying(
+export async function getFailedCheckRuns(
   token: string,
   owner: string,
   repo: string,
-  checkRunId: number,
-  detail: string
-): Promise<void> {
-  await githubApiCall(
-    token,
-    `https://api.github.com/repos/${owner}/${repo}/check-runs/${checkRunId}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({
-        status: "in_progress",
-        output: { title: "AlphaPR retrying", summary: detail },
-      }),
-    },
-    "Failed to update check run"
-  );
+  headSha: string,
+  excludeName: string
+): Promise<OtherCheckRun[]> {
+  const failures: OtherCheckRun[] = [];
+  let url: string | null = `https://api.github.com/repos/${owner}/${repo}/commits/${headSha}/check-runs?per_page=100`;
+
+  while (url && failures.length < 5) {
+    const res = await githubApiCall(token, url, { method: "GET" }, "Failed to fetch check runs");
+
+    const data = (await res.json()) as {
+      check_runs: {
+        name: string;
+        conclusion: string | null;
+        output: { summary: string | null; text: string | null } | null;
+      }[];
+    };
+
+    for (const c of data.check_runs) {
+      if (c.name !== excludeName && c.conclusion === "failure") {
+        failures.push({
+          name: c.name,
+          conclusion: c.conclusion,
+          summary: c.output?.summary ?? null,
+          text: c.output?.text ?? null,
+        });
+        if (failures.length >= 5) break;
+      }
+    }
+
+    // Follow GitHub's Link header for the next page, if present
+    const linkHeader = res.headers.get("Link");
+    const nextMatch = linkHeader?.match(/<([^>]+)>;\s*rel="next"/);
+    url = nextMatch ? nextMatch[1] : null;
+  }
+
+  return failures;
 }

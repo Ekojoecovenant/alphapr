@@ -1,21 +1,22 @@
-import {
-  getReviewState,
-  saveReviewState,
-  getInstallation,
-} from "./db";
+import { getReviewState, saveReviewState, getInstallation } from "./db";
 import {
   postReviewComment,
   editComment,
   createReview,
   completeCheckRun,
+  markCheckRunRetrying,
   getPRDescription,
   updatePRDescription,
-  type ReviewCommentInput,
-  type CheckConclusion,
-  markCheckRunRetrying,
+  getFailedCheckRuns,
 } from "./github/api";
 import { createAppJWT, getInstallationToken } from "./github/auth";
-import { reviewDiff, generateSummary, type Finding, type ReviewResult } from "./review/llm";
+import {
+  reviewDiff,
+  generateSummary,
+  summarizeExternalChecks,
+  type Finding,
+  type ReviewResult,
+} from "./review/llm";
 import { parseDiff } from "./review/diff";
 import {
   renderAnchoredComment,
@@ -26,22 +27,11 @@ import {
 } from "./review/render";
 import { decryptSecret } from "./crypto";
 import { PermanentError } from "./errors";
-import { parseProvider, Provider } from './review/provider-types';
+import { parseProvider, type Provider } from "./review/provider-types";
+import type { ReviewJob, ReviewCommentInput, CheckConclusion } from "./types";
 
-export interface ReviewJob {
-  installationId: number;
-  owner: string;
-  repo: string;
-  repoFullName: string;
-  prNumber: number;
-  headSha: string;
-  action: "opened" | "synchronize";
-  statusCommentId: number | null;
-  checkRunId: number | null;
-}
+export type { ReviewJob };
 
-/** Best-effort: edit the status comment and/or conclude the check run to reflect a failure.
- *  Shared by both the queue's catch block and free-tier mode's inline catch. */
 export async function surfaceFailure(
   job: ReviewJob,
   env: Env,
@@ -74,25 +64,20 @@ export async function surfaceFailure(
   if (job.checkRunId !== null) {
     try {
       if (willRetry) {
-        await markCheckRunRetrying(
+        // Retry pending — keep the check IN PROGRESS, do NOT complete it.
+        await markCheckRunRetrying(token, job.owner, job.repo, job.checkRunId, commentText);
+      } else {
+        // Terminal state: either permanent failure or retries exhausted.
+        await completeCheckRun(
           token,
           job.owner,
           job.repo,
           job.checkRunId,
-          `${commentText}`
-        )
+          "failure",
+          "AlphaPR review failed",
+          isPermanent ? "This won't be retried." : `All retry attempts exhausted.${attemptSuffix}`
+        );
       }
-      await completeCheckRun(
-        token,
-        job.owner,
-        job.repo,
-        job.checkRunId,
-        isPermanent ? "failure" : "failure",
-        isPermanent ? "AlphaPR review failed" : "AlphaPR review failed",
-        isPermanent
-          ? "This won't be retried."
-          : `All retry attempts exhausted.${attemptSuffix}`
-      );
     } catch {
       /* never let status-surfacing throw further */
     }
@@ -127,7 +112,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
     reviewTone = installation.review_tone === "concise" ? "concise" : "thorough";
     severityThreshold = installation.severity_threshold;
     ignorePaths = installation.ignore_paths ? installation.ignore_paths.split(",") : [];
-    provider = parseProvider(installation.provider); // narrow, never trust raw DB string as the union type
+    provider = parseProvider(installation.provider);
   } else if (job.owner === env.FALLBACK_OWNER) {
     apiKey = env.OPENROUTER_API_KEY;
     model = "deepseek/deepseek-v4-flash";
@@ -212,6 +197,24 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 
   const parsed = parseDiff(diff, ignorePaths);
 
+  // Fetch other failing checks on this commit for corroborating context.
+  // Best-effort: never let this block the review itself.
+  let externalContext: string | undefined;
+  try {
+    const otherChecks = await getFailedCheckRuns(
+      token,
+      job.owner,
+      job.repo,
+      job.headSha,
+      "AlphaPR Review"
+    );
+    externalContext = summarizeExternalChecks(otherChecks) ?? undefined;
+  } catch (err) {
+    console.log(
+      `Failed to fetch external check runs (continuing without): ${err instanceof Error ? err.message : err}`
+    );
+  }
+
   const result = await reviewDiff(
     parsed.annotated,
     {
@@ -221,7 +224,8 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
       provider,
       supportsReasoning: model.includes("-pro"),
     },
-    usedIncremental ? state!.last_review_body ?? undefined : undefined
+    usedIncremental ? state!.last_review_body ?? undefined : undefined,
+    externalContext
   );
 
   const rank: Record<string, number> = { major: 0, minor: 1, nit: 2 };
@@ -262,17 +266,17 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
     const comments: ReviewCommentInput[] = sortFindings(anchored).map((f) => {
       const comment: ReviewCommentInput = {
         path: f.path,
-        line: f.endLine ?? f.line, // GitHub's "line" field is always the END of the range
+        line: f.endLine ?? f.line,
         side: "RIGHT",
         body: renderAnchoredComment(f),
       };
       if (f.endLine !== undefined) {
-        comment.start_line = f.line; // start of the range
+        comment.start_line = f.line;
         comment.start_side = "RIGHT";
       }
       return comment;
     });
-    
+
     try {
       await createReview(
         token,
@@ -331,21 +335,13 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
   }
 
   try {
-    await saveReviewState(
-      env.DB,
-      job.repoFullName,
-      job.prNumber,
-      job.headSha,
-      renderForMemory(result)
-    );
+    await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, renderForMemory(result));
   } catch (err) {
     console.error(
       `Failed to save review state (comments already posted): ${err instanceof Error ? err.message : err}`
     );
   }
 
-  // Best-effort: update the PR description summary. Queue mode only — the
-  // extra LLM call and API round-trips are too costly for free-tier's budget.
   if (env.QUEUE_MODE === "true") {
     try {
       let fullDiffForSummary = diff;
