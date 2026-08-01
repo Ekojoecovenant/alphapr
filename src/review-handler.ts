@@ -7,7 +7,7 @@ import {
   markCheckRunRetrying,
   getPRDescription,
   updatePRDescription,
-  getOtherCheckRuns,
+  getFailedCheckRuns,
 } from "./github/api";
 import { createAppJWT, getInstallationToken } from "./github/auth";
 import {
@@ -201,7 +201,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
   // Best-effort: never let this block the review itself.
   let externalContext: string | undefined;
   try {
-    const otherChecks = await getOtherCheckRuns(
+    const otherChecks = await getFailedCheckRuns(
       token,
       job.owner,
       job.repo,

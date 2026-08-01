@@ -226,34 +226,44 @@ export async function updatePRDescription(
   );
 }
 
-export async function getOtherCheckRuns(
+export async function getFailedCheckRuns(
   token: string,
   owner: string,
   repo: string,
   headSha: string,
   excludeName: string
 ): Promise<OtherCheckRun[]> {
-  const res = await githubApiCall(
-    token,
-    `https://api.github.com/repos/${owner}/${repo}/commits/${headSha}/check-runs`,
-    { method: "GET" },
-    "Failed to fetch check runs"
-  );
+  const failures: OtherCheckRun[] = [];
+  let url: string | null = `https://api.github.com/repos/${owner}/${repo}/commits/${headSha}/check-runs?per_page=100`;
 
-  const data = (await res.json()) as {
-    check_runs: {
-      name: string;
-      conclusion: string | null;
-      output: { summary: string | null; text: string | null } | null;
-    }[];
-  };
+  while (url && failures.length < 5) {
+    const res = await githubApiCall(token, url, { method: "GET" }, "Failed to fetch check runs");
 
-  return data.check_runs
-    .filter((c) => c.name !== excludeName && c.conclusion === "failure")
-    .map((c) => ({
-      name: c.name,
-      conclusion: c.conclusion,
-      summary: c.output?.summary ?? null,
-      text: c.output?.text ?? null,
-    }));
+    const data = (await res.json()) as {
+      check_runs: {
+        name: string;
+        conclusion: string | null;
+        output: { summary: string | null; text: string | null } | null;
+      }[];
+    };
+
+    for (const c of data.check_runs) {
+      if (c.name !== excludeName && c.conclusion === "failure") {
+        failures.push({
+          name: c.name,
+          conclusion: c.conclusion,
+          summary: c.output?.summary ?? null,
+          text: c.output?.text ?? null,
+        });
+        if (failures.length >= 5) break;
+      }
+    }
+
+    // Follow GitHub's Link header for the next page, if present
+    const linkHeader = res.headers.get("Link");
+    const nextMatch = linkHeader?.match(/<([^>]+)>;\s*rel="next"/);
+    url = nextMatch ? nextMatch[1] : null;
+  }
+
+  return failures;
 }
