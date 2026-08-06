@@ -120,8 +120,10 @@ export function configFormPage(data: ConfigFormData): string {
         <label>Provider
           <select name="provider">
             <option value="openrouter" ${data.currentProvider === 'openrouter' ? 'selected' : ''}>OpenRouter</option>
+            <option value="anthropic" ${data.currentProvider === 'anthropic' ? 'selected' : ''}>Anthropic (unverified)</option>
+            <option value="openai" ${data.currentProvider === 'openai' ? 'selected' : ''}>OpenAI (unverified)</option>
           </select>
-          <p class="hint">Anthropic and OpenAI adapters exist but are not yet verified against live APIs — see the roadmap.</p>
+          <p class="hint">OpenRouter is verified in production. The Anthropic and OpenAI adapters are implemented but have not been tested against live APIs — if you use one and hit a problem, please <a href="https://github.com/Ekojoecovenant/alphapr/issues">open an issue</a>.</p>
         </label>
 
         <label>API key
@@ -131,7 +133,7 @@ export function configFormPage(data: ConfigFormData): string {
 
         <label>Model
           <input name="model" type="text" value="${esc(data.currentModel)}">
-          <p class="hint">Any OpenRouter model. Fast, non-reasoning models recommended.</p>
+          <p class="hint">Model ID for your chosen provider (e.g. <code>deepseek/deepseek-v4-flash</code> for OpenRouter, <code>claude-sonnet-4-5</code> for Anthropic, <code>gpt-4o</code> for OpenAI). Fast, non-reasoning models are recommended.</p>
         </label>
 
         <label>Severity threshold
