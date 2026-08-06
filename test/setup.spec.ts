@@ -86,6 +86,14 @@ describe('getAuthorizedInstallations', () => {
 		expect(res).toEqual([]);
 		expect(errSpy).toHaveBeenCalled();
 	});
+
+	it('drops an org installation where an admin invite is still pending', async () => {
+		mockGitHub('ekojoe', {
+			ForXed: new Response(JSON.stringify({ role: 'admin', state: 'pending' }), { status: 200 }),
+		});
+		const res = await getAuthorizedInstallations('tok', [install(14, 'ForXed', 'Organization')]);
+		expect(res).toEqual([]);
+	});
 });
 
 describe('hmacSign / hmacVerify', () => {

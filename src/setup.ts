@@ -1,6 +1,6 @@
 import { encryptSecret } from './crypto';
 import { PROVIDERS } from './review/provider-types';
-import { configFormPage, errorPage, noInstallationsPage, successPage } from './setup-pages';
+import { configFormPage, errorPage, esc, noInstallationsPage, successPage } from './setup-pages';
 
 // ── HMAC signing for state params and form tokens ──
 
@@ -35,10 +35,6 @@ function getCookie(request: Request, name: string): string | null {
 		if (k === name) return rest.join('=');
 	}
 	return null;
-}
-
-function esc(s: string): string {
-	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function htmlResponse(body: string, status = 200): Response {
@@ -210,11 +206,12 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 		return htmlResponse(
 			configFormPage({
 				installationOptions: options,
-				currentModel: esc(existingConfig?.model ?? 'deepseek/deepseek-v4-flash'),
+				currentProvider: existingConfig?.provider ?? 'openrouter',
+				currentModel: existingConfig?.model ?? 'deepseek/deepseek-v4-flash',
 				currentSeverity: existingConfig?.severity_threshold ?? 'all',
 				currentTone: existingConfig?.review_tone ?? 'thorough',
-				currentIgnorePaths: esc(existingConfig?.ignore_paths ?? ''),
-				formToken: esc(formToken),
+				currentIgnorePaths: existingConfig?.ignore_paths ?? '',
+				formToken,
 			}),
 		);
 	}
@@ -325,7 +322,7 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 				.run();
 		}
 
-		return htmlResponse(successPage(esc(match.login), installationId));
+		return htmlResponse(successPage(match.login, installationId));
 	}
 
 	return null;

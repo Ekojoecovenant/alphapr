@@ -59,6 +59,10 @@ const BASE_STYLES = `
   }
 `;
 
+export function esc(s: string): string {
+	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function shell(title: string, body: string): string {
 	return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title} · AlphaPR</title>
@@ -72,7 +76,7 @@ export function errorPage(message: string, opts: { showRetry?: boolean } = {}): 
 		'Error',
 		`
     <div class="card">
-      <p class="err">${message}</p>
+      <p class="err">${esc(message)}</p>
       ${opts.showRetry !== false ? `<p><a href="/setup">Start over</a></p>` : ''}
     </div>
   `,
@@ -94,6 +98,7 @@ export function noInstallationsPage(): string {
 
 export interface ConfigFormData {
 	installationOptions: string;
+	currentProvider: string;
 	currentModel: string;
 	currentSeverity: string;
 	currentTone: string;
@@ -111,14 +116,24 @@ export function configFormPage(data: ConfigFormData): string {
         <label>Installation
           <select name="installationId">${data.installationOptions}</select>
         </label>
-        <label>OpenRouter API key
+
+        <label>Provider
+          <select name="provider">
+            <option value="openrouter" ${data.currentProvider === 'openrouter' ? 'selected' : ''}>OpenRouter</option>
+          </select>
+          <p class="hint">Anthropic and OpenAI adapters exist but are not yet verified against live APIs — see the roadmap.</p>
+        </label>
+
+        <label>API key
           <input name="apiKey" type="password" placeholder="Leave blank to keep your existing key">
           <p class="hint">Required on first setup. Leave blank when editing settings to keep your current key.</p>
         </label>
+
         <label>Model
-          <input name="model" type="text" value="${data.currentModel}">
+          <input name="model" type="text" value="${esc(data.currentModel)}">
           <p class="hint">Any OpenRouter model. Fast, non-reasoning models recommended.</p>
         </label>
+
         <label>Severity threshold
           <select name="severityThreshold">
             <option value="all" ${data.currentSeverity === 'all' ? 'selected' : ''}>All (major, minor, nits)</option>
@@ -126,17 +141,20 @@ export function configFormPage(data: ConfigFormData): string {
             <option value="major" ${data.currentSeverity === 'major' ? 'selected' : ''}>Major only</option>
           </select>
         </label>
+
         <label>Review tone
           <select name="reviewTone">
             <option value="thorough" ${data.currentTone === 'thorough' ? 'selected' : ''}>Thorough</option>
             <option value="concise" ${data.currentTone === 'concise' ? 'selected' : ''}>Concise</option>
           </select>
         </label>
+
         <label>Ignore paths
-          <input name="ignorePaths" type="text" value="${data.currentIgnorePaths}" placeholder="dist/,*.lock,*.min.js">
+          <input name="ignorePaths" type="text" value="${esc(data.currentIgnorePaths)}" placeholder="dist/,*.lock,*.min.js">
           <p class="hint">Comma-separated. Supports "dir/" prefixes and "*.ext" suffixes. If you can configure more than one installation, this form pre-fills the first one's saved settings — check the Installation dropdown above before saving.</p>
         </label>
-        <input type="hidden" name="token" value="${data.formToken}">
+
+        <input type="hidden" name="token" value="${esc(data.formToken)}">
         <button type="submit">Save configuration</button>
       </form>
     </div>
@@ -150,7 +168,7 @@ export function successPage(login: string, installationId: number): string {
 		`
     <div class="card">
       <p class="success">✅ Saved</p>
-      <p>AlphaPR is configured for <strong>${login}</strong> (installation ${installationId}).</p>
+      <p>AlphaPR is configured for <strong>${esc(login)}</strong> (installation ${installationId}).</p>
       <p>Open or update a PR to trigger a review.</p>
     </div>
   `,

@@ -13,6 +13,10 @@ export default {
 		if (setupResponse) return setupResponse;
 
 		if (request.method !== 'POST') {
+			const { pathname } = new URL(request.url);
+			if (pathname !== '/') {
+				return new Response('not found', { status: 404 });
+			}
 			return new Response(landingPage(), {
 				status: 200,
 				headers: { 'Content-Type': 'text/html; charset=utf-8' },
