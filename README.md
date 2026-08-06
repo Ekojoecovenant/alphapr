@@ -241,7 +241,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and 
 
 ## Roadmap
 
-- **Multi-provider live verification** — Anthropic and OpenAI adapters are implemented but untested against real API keys; needs live verification before exposing provider selection in `/setup`
+- **Multi-provider live verification** — the Anthropic and OpenAI adapters are selectable in `/setup` but have not been tested against live API keys; verification (and removing the "unverified" labels) is pending
 - **Provider capability interface** — replace the `model.includes("-pro")` reasoning-support heuristic with a proper per-adapter capability check
 - **Self-hosted/open-weight direct adapters** — e.g. Ollama, Together AI, or other OpenAI-compatible endpoints for teams running their own open models, alongside OpenRouter/Anthropic/OpenAI
 - **Structured findings from CI context** — currently, the repo's own failing CI checks are folded in as prose context for the model's reasoning; promoting them into first-class anchored `Finding`s (with their own source attribution) is a natural next step
