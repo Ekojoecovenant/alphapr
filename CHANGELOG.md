@@ -3,7 +3,7 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
-## [v1.3.0] — 2026-07-31
+## [v1.3.0] — 2026-08-01
 
 ### Added
 
