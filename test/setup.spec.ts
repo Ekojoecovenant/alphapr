@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { modelSupportsReasoning } from '../src/review/providers';
 import { getAuthorizedInstallations, hmacSign, hmacVerify } from '../src/setup';
 
 const SECRET = 'test-secret-do-not-use-in-production';
@@ -138,5 +139,17 @@ describe('hmacSign / hmacVerify', () => {
 		const sig2 = await hmacSign('same input', 'secret-two');
 
 		expect(sig1).not.toBe(sig2);
+	});
+});
+
+describe('modelSupportsReasoning', () => {
+	it('detects deepseek reasoning models', () => {
+		expect(modelSupportsReasoning('deepseek/deepseek-v4-pro')).toBe(true);
+		expect(modelSupportsReasoning('deepseek/deepseek-v4-flash-0731')).toBe(true);
+	});
+
+	it('does not flag plain fast models', () => {
+		expect(modelSupportsReasoning('deepseek/deepseek-v4-flash')).toBe(false);
+		expect(modelSupportsReasoning('gpt-4o')).toBe(false);
 	});
 });

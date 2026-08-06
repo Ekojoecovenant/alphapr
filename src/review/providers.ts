@@ -31,6 +31,22 @@ export function getAdapter(provider: Provider): ProviderAdapter {
 	}
 }
 
+/**
+ * Models known to support reasoning, requiring a reasoning-token cap so the
+ * thinking budget doesn't consume the entire output allowance.
+ *
+ * Matched by substring against the configured model string. Add new reasoning
+ * models here — this is the only place that needs to change.
+ *
+ * TODO: replace with real capability detection via OpenRouter's /models
+ * endpoint (`supported_parameters` includes "reasoning"), cached per model.
+ */
+const REASONING_MODEL_MARKERS = ['-pro', 'deepseek-v4-flash-0731', 'o1-', 'o3-'] as const;
+
+export function modelSupportsReasoning(model: string): boolean {
+	return REASONING_MODEL_MARKERS.some((marker) => model.includes(marker));
+}
+
 export const openRouterAdapter: ProviderAdapter = {
 	async call(apiKey, req) {
 		const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
