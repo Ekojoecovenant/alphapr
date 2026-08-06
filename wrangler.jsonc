@@ -18,9 +18,7 @@
 		}
 	},
 	"upload_source_maps": true,
-	"compatibility_flags": [
-		"nodejs_compat"
-	],
+	"compatibility_flags": ["nodejs_compat"],
 	"vars": {
 		"FALLBACK_OWNER": "Ekojoecovenant",
 		"GITHUB_CLIENT_ID": "Iv23liPMCeYoTUsbbC5b",
@@ -51,9 +49,7 @@
 		}
 	],
 	"queues": {
-		"producers": [
-			{ "binding": "REVIEW_QUEUE", "queue": "pr-review-jobs" }
-		],
+		"producers": [{ "binding": "REVIEW_QUEUE", "queue": "pr-review-jobs" }],
 		"consumers": [
 			{
 				"queue": "pr-review-jobs",
@@ -62,6 +58,10 @@
 				"dead_letter_queue": "pr-review-dlq"
 			}
 		]
+	},
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS"
 	}
 	/**
 	 * Smart Placement
