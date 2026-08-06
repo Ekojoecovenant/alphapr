@@ -48,6 +48,50 @@ function htmlResponse(body: string, status = 200): Response {
 	});
 }
 
+interface RawInstallation {
+	id: number;
+	account: { login: string; type: string };
+}
+
+/**
+ * GitHub's GET /user/installations returns installations the user has :read, :write,
+ * OR :admin access to — which includes mere repository collaborators. That is NOT
+ * sufficient authorization to reconfigure an installation's settings (model, API key,
+ * thresholds). This filters down to only installations the user genuinely owns or
+ * administers: their own personal-account installs, and orgs where they hold an
+ * active admin role.
+ */
+async function getAuthorizedInstallations(userToken: string, installations: RawInstallation[]): Promise<RawInstallation[]> {
+	const meRes = await fetch('https://api.github.com/user', {
+		headers: { Authorization: `Bearer ${userToken}`, 'User-Agent': 'alphapr' },
+	});
+	if (!meRes.ok) return [];
+	const me = (await meRes.json()) as { login: string };
+
+	const authorized: RawInstallation[] = [];
+
+	for (const inst of installations) {
+		if (inst.account.type === 'User') {
+			// Personal-account installation: only the account owner may configure it.
+			if (inst.account.login === me.login) authorized.push(inst);
+			continue;
+		}
+
+		// Organization-owned installation: require an active admin role.
+		const res = await fetch(`https://api.github.com/orgs/${inst.account.login}/memberships/${me.login}`, {
+			headers: { Authorization: `Bearer ${userToken}`, 'User-Agent': 'alphapr' },
+		});
+		if (!res.ok) continue;
+
+		const membership = (await res.json()) as { role: string; state: string };
+		if (membership.role === 'admin' && membership.state === 'active') {
+			authorized.push(inst);
+		}
+	}
+
+	return authorized;
+}
+
 // ── Route handler: returns a Response for /setup* paths, null otherwise ──
 
 export async function handleSetup(request: Request, env: Env): Promise<Response | null> {
@@ -74,7 +118,7 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 		});
 	}
 
-	// 2) OAuth callback: verify state + nonce, exchange code, render form
+	// 2) OAuth callback: verify state + nonce, exchange code, filter to authorized installs, render form
 	if (url.pathname === '/setup/callback' && request.method === 'GET') {
 		const code = url.searchParams.get('code');
 		const state = url.searchParams.get('state') ?? '';
@@ -121,26 +165,33 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 		if (!instRes.ok) {
 			return htmlResponse(errorPage(`Could not fetch your installations (${instRes.status}).`), 400);
 		}
-		const instData = (await instRes.json()) as {
-			installations: { id: number; account: { login: string } }[];
-		};
+		const instData = (await instRes.json()) as { installations: RawInstallation[] };
 
-		if (instData.installations.length === 0) {
+		// Filter to installations this user is actually authorized to configure.
+		const installations = await getAuthorizedInstallations(tokenData.access_token, instData.installations);
+
+		if (installations.length === 0) {
 			return htmlResponse(noInstallationsPage());
 		}
 
 		const existingConfig = await env.DB.prepare(
 			`SELECT model, severity_threshold, review_tone, ignore_paths, provider FROM installations WHERE installation_id = ?`,
 		)
-			.bind(instData.installations[0].id)
-			.first<{ model: string; severity_threshold: string; review_tone: string; ignore_paths: string; provider: string }>();
+			.bind(installations[0].id)
+			.first<{
+				model: string;
+				severity_threshold: string;
+				review_tone: string;
+				ignore_paths: string;
+				provider: string;
+			}>();
 
-		const allowedPairs = instData.installations.map((i) => `${i.id}:${i.account.login}`).join(',');
+		const allowedPairs = installations.map((i) => `${i.id}:${i.account.login}`).join(',');
 		const exp = (Date.now() + 10 * 60 * 1000).toString();
 		const payload = `${allowedPairs}|${exp}`;
 		const formToken = `${payload}.${await hmacSign(payload, env.SETUP_SIGNING_SECRET)}`;
 
-		const options = instData.installations.map((i) => `<option value="${i.id}">${esc(i.account.login)} (${i.id})</option>`).join('');
+		const options = installations.map((i) => `<option value="${i.id}">${esc(i.account.login)} (${i.id})</option>`).join('');
 
 		return htmlResponse(
 			configFormPage({
@@ -188,7 +239,7 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 			.find((p) => p.id === installationId);
 
 		if (!match) {
-			return htmlResponse(errorPage("You don't have access to that installation."), 403);
+			return htmlResponse(errorPage("You don't have permission to configure that installation."), 403);
 		}
 		if (!model) {
 			return htmlResponse(errorPage('Model is required.'), 400);
@@ -235,7 +286,13 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 				`SELECT model, severity_threshold, review_tone, ignore_paths, provider FROM installations WHERE installation_id = ?`,
 			)
 				.bind(installationId)
-				.first<{ model: string; severity_threshold: string; review_tone: string; ignore_paths: string; provider: string }>();
+				.first<{
+					model: string;
+					severity_threshold: string;
+					review_tone: string;
+					ignore_paths: string;
+					provider: string;
+				}>();
 
 			await env.DB.prepare(
 				`UPDATE installations SET

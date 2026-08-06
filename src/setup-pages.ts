@@ -1,14 +1,14 @@
 const BASE_STYLES = `
   :root {
-    --bg: #0d1117;
-    --surface: #161b22;
-    --border: #30363d;
-    --text: #e6edf3;
-    --text-dim: #8b949e;
-    --accent: #2f81f7;
-    --accent-hover: #1f6feb;
-    --success: #3fb950;
-    --error: #f85149;
+    --bg: #ffffff;
+    --surface: #f6f8fa;
+    --border: #d0d7de;
+    --text: #28282a;
+    --text-dim: #6e7681;
+    --accent: #02a2ee;
+    --accent-hover: #0288c7;
+    --success: #1a7f37;
+    --error: #cf222e;
   }
   * { box-sizing: border-box; }
   body {
@@ -20,7 +20,8 @@ const BASE_STYLES = `
     padding: 0 20px;
     line-height: 1.5;
   }
-  h1, h2 { font-weight: 600; }
+  .logo { display: block; height: 48px; margin-bottom: 24px; }
+  h1, h2 { font-weight: 600; margin: 0 0 8px; }
   a { color: var(--accent); }
   label { display: block; margin-top: 20px; font-weight: 600; font-size: 14px; }
   .hint { font-weight: 400; color: var(--text-dim); font-size: 12px; margin: 4px 0 0; }
@@ -28,7 +29,7 @@ const BASE_STYLES = `
     width: 100%;
     padding: 10px 12px;
     margin: 6px 0;
-    background: var(--surface);
+    background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 6px;
     color: var(--text);
@@ -61,14 +62,15 @@ const BASE_STYLES = `
 function shell(title: string, body: string): string {
 	return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title} · AlphaPR</title>
-<style>${BASE_STYLES}</style></head><body>${body}</body></html>`;
+<style>${BASE_STYLES}</style></head><body>
+<img src="/logo.png" alt="AlphaPR" class="logo">
+${body}</body></html>`;
 }
 
-export function errorPage(message: string, opts: { status?: number; showRetry?: boolean } = {}): string {
+export function errorPage(message: string, opts: { showRetry?: boolean } = {}): string {
 	return shell(
 		'Error',
 		`
-    <h1>AlphaPR</h1>
     <div class="card">
       <p class="err">${message}</p>
       ${opts.showRetry !== false ? `<p><a href="/setup">Start over</a></p>` : ''}
@@ -81,17 +83,17 @@ export function noInstallationsPage(): string {
 	return shell(
 		'Get started',
 		`
-    <h1>AlphaPR</h1>
     <div class="card">
-      <p>No AlphaPR installations found for your account.</p>
-      <p><a href="https://github.com/apps/alphapr-ai">Install AlphaPR</a> first, then return here.</p>
+      <p>No AlphaPR installations found that you have permission to configure.</p>
+      <p class="hint">You must be the account owner, or an organization admin, to configure an installation. Being a repository collaborator is not sufficient.</p>
+      <p><a href="https://github.com/apps/alphapr-ai">Install AlphaPR</a> on your own account or organization, then return here.</p>
     </div>
   `,
 	);
 }
 
 export interface ConfigFormData {
-	installationOptions: string; // pre-rendered <option> tags
+	installationOptions: string;
 	currentModel: string;
 	currentSeverity: string;
 	currentTone: string;
@@ -103,7 +105,6 @@ export function configFormPage(data: ConfigFormData): string {
 	return shell(
 		'Configure',
 		`
-    <h1>AlphaPR</h1>
     <p class="hint">Configure your installation below.</p>
     <div class="card">
       <form method="POST" action="/setup/save">
@@ -133,8 +134,7 @@ export function configFormPage(data: ConfigFormData): string {
         </label>
         <label>Ignore paths
           <input name="ignorePaths" type="text" value="${data.currentIgnorePaths}" placeholder="dist/,*.lock,*.min.js">
-          <p class="hint">Comma-separated. Supports "dir/" prefixes and "*.ext" suffixes.
-          If you have access to multiple installations, this form only pre-fills the FIRST one's saved config — check the Installation dropdown above carefully before saving, especially if you manage more than one.</p>
+          <p class="hint">Comma-separated. Supports "dir/" prefixes and "*.ext" suffixes. If you can configure more than one installation, this form pre-fills the first one's saved settings — check the Installation dropdown above before saving.</p>
         </label>
         <input type="hidden" name="token" value="${data.formToken}">
         <button type="submit">Save configuration</button>
@@ -148,7 +148,6 @@ export function successPage(login: string, installationId: number): string {
 	return shell(
 		'Saved',
 		`
-    <h1>AlphaPR</h1>
     <div class="card">
       <p class="success">✅ Saved</p>
       <p>AlphaPR is configured for <strong>${login}</strong> (installation ${installationId}).</p>
@@ -162,11 +161,10 @@ export function landingPage(): string {
 	return shell(
 		'Home',
 		`
-    <h1>AlphaPR</h1>
     <p class="hint">A BYOK AI PR reviewer that comments on the exact lines it's talking about — and remembers what it already said.</p>
     <div class="card">
       <p><a href="https://github.com/apps/alphapr-ai">Install the GitHub App</a>, then visit <a href="/setup">/setup</a> to configure your key.</p>
-      <p><a href="https://github.com/Ekojoecovenant/alphapr">View source & docs on GitHub →</a></p>
+      <p><a href="https://github.com/Ekojoecovenant/alphapr">View source &amp; docs on GitHub →</a></p>
     </div>
   `,
 	);

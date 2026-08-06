@@ -58,6 +58,10 @@
 				"dead_letter_queue": "pr-review-dlq"
 			}
 		]
+	},
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS"
 	}
 	/**
 	 * Smart Placement
