@@ -316,7 +316,7 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 					severityThreshold || current?.severity_threshold || 'all',
 					reviewTone || current?.review_tone || 'thorough',
 					ignorePaths,
-					provider || current?.provider || 'openrouter',
+current?.provider ?? 'openrouter',
 					installationId,
 				)
 				.run();
