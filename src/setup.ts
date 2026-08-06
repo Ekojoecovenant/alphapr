@@ -61,27 +61,41 @@ interface RawInstallation {
  * administers: their own personal-account installs, and orgs where they hold an
  * active admin role.
  */
-async function getAuthorizedInstallations(userToken: string, installations: RawInstallation[]): Promise<RawInstallation[]> {
+export async function getAuthorizedInstallations(userToken: string, installations: RawInstallation[]): Promise<RawInstallation[]> {
 	const meRes = await fetch('https://api.github.com/user', {
 		headers: { Authorization: `Bearer ${userToken}`, 'User-Agent': 'alphapr' },
 	});
-	if (!meRes.ok) return [];
+	if (!meRes.ok) {
+		console.error(`getAuthorizedInstallations: could not fetch /user (${meRes.status})`);
+		return [];
+	}
 	const me = (await meRes.json()) as { login: string };
 
 	const authorized: RawInstallation[] = [];
 
 	for (const inst of installations) {
 		if (inst.account.type === 'User') {
-			// Personal-account installation: only the account owner may configure it.
 			if (inst.account.login === me.login) authorized.push(inst);
 			continue;
 		}
 
-		// Organization-owned installation: require an active admin role.
 		const res = await fetch(`https://api.github.com/orgs/${inst.account.login}/memberships/${me.login}`, {
 			headers: { Authorization: `Bearer ${userToken}`, 'User-Agent': 'alphapr' },
 		});
-		if (!res.ok) continue;
+
+		if (!res.ok) {
+			// 404 legitimately means "not a member". Anything else (401/403) means we
+			// couldn't determine the role — for a GitHub App this is almost always the
+			// app missing the "Organization members" user permission (Members: Read) in
+			// its settings — and that must be visible in logs rather than silently
+			// excluding a real admin.
+			if (res.status !== 404) {
+				console.error(
+					`getAuthorizedInstallations: membership check for ${inst.account.login} failed (${res.status}) — the GitHub App needs the "Organization members" user permission (Members: Read) in its Permissions & events settings`,
+				);
+			}
+			continue;
+		}
 
 		const membership = (await res.json()) as { role: string; state: string };
 		if (membership.role === 'admin' && membership.state === 'active') {

@@ -13,7 +13,10 @@ export default {
 		if (setupResponse) return setupResponse;
 
 		if (request.method !== 'POST') {
-			return new Response(landingPage(), { status: 200 });
+			return new Response(landingPage(), {
+				status: 200,
+				headers: { 'Content-Type': 'text/html; charset=utf-8' },
+			});
 		}
 
 		const rawBody = await request.text();
