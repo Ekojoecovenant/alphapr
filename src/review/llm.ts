@@ -186,7 +186,7 @@ export async function reviewDiff(
 		model: config.model,
 		systemPrompt: SYSTEM_PROMPT + toneInstruction,
 		userMessages,
-		maxTokens: 8000,
+		maxTokens: 16000,
 		reasoningMaxTokens: config.supportsReasoning ? 2000 : undefined,
 	});
 
@@ -211,7 +211,7 @@ export async function reviewDiff(
 }
 
 // ========== SUMMARY ============ //
-const SUMMARY_PROMPT = `You summarize a pull request's overall changes for its description. Group your output under relevant headers using "###" from this set — use only the ones that apply, in this order: New Features, Bug Fixes, Chores, Tests, Documentation. Under each header, list 1-4 concise bullet points. Skip a header entirely if nothing in the diff fits it. If none of these headers apply, output a single bullet point describing the change without a header. Describe WHAT changed and WHY it matters — not line-by-line implementation detail. Do not wrap the whole output in a code fence. Output ONLY the headers and bullet points, nothing else.`;
+const SUMMARY_PROMPT = `You summarize a pull request's overall changes for its description. Group your output under relevant headers using "###" from this set — use only the ones that apply, in this order: New Features, Bug Fixes, Chores, Tests, Documentation. Under each header, list 1-5 concise bullet points. Skip a header entirely if nothing in the diff fits it. If none of these headers apply, output a single bullet point describing the change without a header. Describe WHAT changed and WHY it matters — not line-by-line implementation detail. Do not wrap the whole output in a code fence. Output ONLY the headers and bullet points cleanly and professionally, nothing else.`;
 
 /** Best-effort PR description summary. Returns null on any failure — never throws. */
 export async function generateSummary(
@@ -219,7 +219,7 @@ export async function generateSummary(
 	config: { apiKey: string; model: string; provider: Provider },
 ): Promise<string | null> {
 	// Large diffs would blow the model's context; cap defensively.
-	const truncatedDiff = fullDiff.length > 20_000 ? fullDiff.slice(0, 20_000) + '\n... (truncated)' : fullDiff;
+	const truncatedDiff = fullDiff.length > 50_000 ? fullDiff.slice(0, 50_000) + '\n... (truncated)' : fullDiff;
 
 	try {
 		const adapter = getAdapter(config.provider);
@@ -227,7 +227,7 @@ export async function generateSummary(
 			model: config.model,
 			systemPrompt: SUMMARY_PROMPT,
 			userMessages: [{ role: 'user', content: `Summarize this pull request diff:\n\n${truncatedDiff}` }],
-			maxTokens: 800,
+			maxTokens: 1000,
 		});
 
 		if (!result.ok) {
