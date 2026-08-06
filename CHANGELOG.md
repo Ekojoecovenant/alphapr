@@ -3,6 +3,29 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.4.0] — 2026-08-06
+
+### Security
+
+- Installation configuration is now restricted to account owners and organization admins. Previously, GitHub's `/user/installations` endpoint — which returns installations where the user has read, write, **or** admin access, including mere repository collaborators — was treated as sufficient authorization to change an installation's API key, model, and review settings. It is not. Personal-account installations now require a login match; organization installations require an active `admin` role.
+
+### Added
+
+- Branded setup and landing pages: real styling derived from the AlphaPR logo, served from a shared `setup-pages.ts` renderer, with the logo delivered via Cloudflare Workers Static Assets
+- Unit coverage for every authorization branch: owner kept, org admin kept, org member dropped, 404 dropped quietly, 403 dropped with a loud log, `/user` failure returns empty
+
+### Fixed
+
+- The landing page at `/` was served without a `Content-Type` header, causing browsers to render raw HTML as plain text
+
+### Changed
+
+- Tooling migrated from ESLint + Prettier to Biome
+
+> ⚠️ **Upgrade note:** this version requires the **Organization members (Read)** user permission on the GitHub App. Existing installations must approve the new permission (GitHub sends installers a "review requested changes" prompt), and users must re-authorize at `/setup` — existing OAuth tokens do not retroactively gain new permissions. Until then, organization installations will be filtered out of the setup page with a `403` logged.
+
+[v1.4.0]: <https://github.com/Ekojoecovenant/alphapr/releases/tag/v1.4.0>
+
 ## [v1.3.0] — 2026-08-01
 
 ### Added
