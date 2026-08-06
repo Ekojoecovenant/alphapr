@@ -13,6 +13,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follo
 
 - Branded setup and landing pages: real styling derived from the AlphaPR logo, served from a shared `setup-pages.ts` renderer, with the logo delivered via Cloudflare Workers Static Assets
 - Unit coverage for every authorization branch: owner kept, org admin kept, org member dropped, 404 dropped quietly, 403 dropped with a loud log, `/user` failure returns empty
+- Provider selection in the setup page (OpenRouter verified; Anthropic and OpenAI selectable but unverified against live APIs)
+- Reasoning-capable models are detected via an explicit marker list (`modelSupportsReasoning`) rather than an ad-hoc `-pro` string check, so models like `deepseek-v4-flash-0731` get their reasoning budget correctly capped
 
 ### Fixed
 
