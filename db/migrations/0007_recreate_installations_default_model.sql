@@ -1,4 +1,6 @@
 -- db/migrations/0007_recreate_installations_default_model.sql
+BEGIN TRANSACTION;
+
 CREATE TABLE installations_new (
   installation_id INTEGER PRIMARY KEY,
   account_login TEXT NOT NULL,
@@ -19,3 +21,5 @@ FROM installations;
 
 DROP TABLE installations;
 ALTER TABLE installations_new RENAME TO installations;
+
+COMMIT;
