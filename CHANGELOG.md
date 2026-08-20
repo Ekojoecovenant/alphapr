@@ -6,9 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follo
 ## [v1.4.0] — 2026-08-06
 
 ### Security
+
 - Installation configuration is now restricted to account owners and organization admins. Previously, GitHub's `/user/installations` endpoint — which returns installations where the user has read, write, **or** admin access, including mere repository collaborators — was treated as sufficient authorization to change an installation's API key, model, and review settings. It is not. Personal-account installations now require a login match; organization installations require an active `admin` role.
 
 ### Added
+
 - Branded setup and landing pages: real styling derived from the AlphaPR logo, served from a shared `setup-pages.ts` renderer, with the logo delivered via Cloudflare Workers Static Assets
 - Provider selection in the setup page (OpenRouter verified in production; Anthropic and OpenAI selectable but unverified against live APIs)
 - Reasoning-capable models are detected via an explicit marker list (`modelSupportsReasoning`) rather than an ad-hoc `-pro` substring check, so models like `deepseek-v4-flash-0731` get their reasoning budget correctly capped
@@ -17,6 +19,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follo
 - `PermanentError.cause` test coverage
 
 ### Fixed
+
 - `PermanentError` was discarding its `cause` option — decryption failures lost their original error context
 - The landing page at `/` was served without a `Content-Type` header, causing browsers to render raw HTML as plain text
 - Unknown non-root paths returned the landing page with a `200` instead of a `404`
@@ -28,6 +31,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follo
 - The `installations.model` column default was still `deepseek-v4-pro` at the schema level; the earlier fix only backfilled existing rows. Since `upsertInstallation` (fired on every new App install) doesn't specify `model` in its INSERT, every new installation was silently defaulting to the slow reasoning model. The table was recreated with the correct default.
 
 ### Changed
+
 - Tooling migrated from ESLint + Prettier to Biome
 
 > ⚠️ **Upgrade note:** this version requires the **Organization members (Read)** user permission on the GitHub App. Existing installations must approve the new permission (GitHub sends installers a "review requested changes" prompt), and users must re-authorize at `/setup` — existing OAuth tokens do not retroactively gain new permissions. Until then, organization installations will be filtered out of the setup page with a `403` logged.

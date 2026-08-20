@@ -24,7 +24,6 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **Multi-provider foundation** — Anthropic and OpenAI provider adapters built alongside OpenRouter, sharing one architecture (not yet live-verified or exposed in setup — see Roadmap)
 - **CI-aware reviews** — when the repo's own CI has already failed on the same commit, AlphaPR factors that in as corroborating signal rather than reviewing in isolation
 - **Owner-only configuration** — only account owners and organization admins can change an installation's key or settings; repository collaborators cannot
-- **Owner-only configuration** — only account owners and organization admins can change an installation's key or settings; repository collaborators cannot
 
 ## How it works
 
