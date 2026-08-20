@@ -31,6 +31,7 @@ describe('encryptSecret / decryptSecret', () => {
 	it('rejects ciphertext that has been tampered with', async () => {
 		const stored = await encryptSecret('secret api key', KEY_A);
 		const [ivB64, ctB64] = stored.split('.');
+		// Flip the first ciphertext byte so the AES-GCM auth tag no longer matches.
 		const corrupted = `${ivB64}.${(ctB64[0] === 'A' ? 'B' : 'A') + ctB64.slice(1)}`;
 		expect(corrupted).not.toBe(stored);
 		await expect(decryptSecret(corrupted, KEY_A)).rejects.toThrow();
