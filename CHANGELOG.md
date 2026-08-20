@@ -3,6 +3,15 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.5.0] — 2026-08-20
+
+### Added
+
+- `[skip alphapr]` PR title marker: when present (case-insensitive, anywhere in the title), AlphaPR skips the review entirely — no status comment, no check run, no LLM call. Checked before any GitHub API call is made, so a skipped PR costs nothing.
+- `crypto.ts` test coverage: round-trip encryption, IV randomness (proving the IV is never reused), ciphertext tamper rejection, wrong-key rejection, malformed master-key and malformed-stored-value validation
+
+[v1.5.0]: <https://github.com/Ekojoecovenant/alphapr/releases/tag/v1.5.0>
+
 ## [v1.4.0] — 2026-08-06
 
 ### Security
