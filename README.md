@@ -12,7 +12,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 
 - **Line-anchored findings** — comments sit on the exact diff lines in the Files Changed tab, as resolvable threads with working *Apply suggestion* buttons
 - **Incremental memory** — stores what it reviewed and what it said, so updates get reviewed against only the new changes, without repeats
-- **BYOK, encrypted** — every installation brings its own OpenRouter key, AES-GCM encrypted at rest, configured through an OAuth-verified setup page
+- **BYOK, encrypted** — every installation brings its own Provider key, AES-GCM encrypted at rest, configured through an OAuth-verified setup page
 - **Live status** — a "🔍 Reviewing…" comment appears instantly and morphs into the verdict (or a failure notice — no silent deaths)
 - **Self-healing** — force-pushes that erase the remembered commit are detected and recovered automatically
 - **Checks integration** — a review check run in the PR's checks list, in-progress → concluded, so AlphaPR shows up like any CI step (and can gate merges if you make it required)
@@ -23,6 +23,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **Multi-line Apply-suggestions** — fixes that need more than one line (a guard clause, a try/finally wrap) anchor and apply correctly across the whole span
 - **Multi-provider foundation** — Anthropic and OpenAI provider adapters built alongside OpenRouter, sharing one architecture (not yet live-verified or exposed in setup — see Roadmap)
 - **CI-aware reviews** — when the repo's own CI has already failed on the same commit, AlphaPR factors that in as corroborating signal rather than reviewing in isolation
+- **Owner-only configuration** — only account owners and organization admins can change an installation's key or settings; repository collaborators cannot
 
 ## How it works
 
@@ -77,7 +78,7 @@ If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and 
 
 At **github.com/settings/apps → New GitHub App**:
 
-- **Permissions:** Pull requests (Read & Write), Contents (Read-only), Metadata (Read-only), Checks (Read & Write)
+- **Permissions:** Pull requests (Read & Write), Contents (Read-only), Metadata (Read-only), Checks (Read & Write), Organization members (Read-only)
 - **Subscribe to events:** Pull request
 - **Webhook secret:** generate one and save it:
 
@@ -240,12 +241,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and 
 
 ## Roadmap
 
-- **Multi-provider live verification** — Anthropic and OpenAI adapters are implemented but untested against real API keys; needs live verification before exposing provider selection in `/setup`
+- **Multi-provider live verification** — the Anthropic and OpenAI adapters are selectable in `/setup` but have not been tested against live API keys; verification (and removing the "unverified" labels) is pending
 - **Provider capability interface** — replace the `model.includes("-pro")` reasoning-support heuristic with a proper per-adapter capability check
 - **Self-hosted/open-weight direct adapters** — e.g. Ollama, Together AI, or other OpenAI-compatible endpoints for teams running their own open models, alongside OpenRouter/Anthropic/OpenAI
 - **Structured findings from CI context** — currently, the repo's own failing CI checks are folded in as prose context for the model's reasoning; promoting them into first-class anchored `Finding`s (with their own source attribution) is a natural next step
 - **Free-tier retry/backoff logic** — free-tier mode currently has zero retry on transient failures (429s, 5xx); the queue layer handles this today, but free-tier has no equivalent
-- **Hosted setup site** — a proper landing and configuration site beyond the raw `/setup` page
 - **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis. See [ADR](docs/adr/0001-agentic-toolbox-deep-dive-server.md) for the full design.
 - **Managed tier** — eventually: use AlphaPR's own hosted models, no key required
 - **CD** — automatic deployment on merge to `main`, once the manual deploy process has proven stable
