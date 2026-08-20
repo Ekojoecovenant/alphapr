@@ -5,6 +5,7 @@ import { createAppJWT, getInstallationToken } from './github/auth';
 import { handlePREvent, type ReviewJob, surfaceFailure } from './review-handler';
 import { handleSetup } from './setup';
 import { landingPage } from './setup-pages';
+import { shouldSkipReview } from './skip-review';
 import { verifySignature } from './verify';
 
 export default {
@@ -47,6 +48,11 @@ export default {
 		}
 
 		if (event === 'pull_request' && (payload.action === 'opened' || payload.action === 'synchronize')) {
+			if (shouldSkipReview(payload.pull_request.title)) {
+				console.log(`⏭️ Skipping review for PR #${payload.number} — title contains "[skip alphapr]"`);
+				return new Response('ok', { status: 200 });
+			}
+
 			const installationId = payload.installation.id;
 			const owner = payload.repository.owner.login;
 			const repo = payload.repository.name;
