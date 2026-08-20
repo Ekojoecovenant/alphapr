@@ -49,7 +49,7 @@ export async function getInstallationToken(appJwt: string, installationId: numbe
 		headers: {
 			Authorization: `Bearer ${appJwt}`,
 			Accept: 'application/vnd.github+json',
-			'User-Agent': 'alphpr', // GitHub rejects requests without a UA
+			'User-Agent': 'alphapr', // GitHub rejects requests without a UA
 		},
 	});
 

@@ -12,7 +12,6 @@ interface __BaseEnv_Env {
 	GITHUB_APP_PRIVATE_KEY: string;
 	OPENROUTER_API_KEY: string;
 	KEY_ENCRYPTION_SECRET: string;
-	ADMIN_SECRET?: string;
 	GITHUB_CLIENT_SECRET: string;
 	SETUP_SIGNING_SECRET: string;
 }
@@ -39,7 +38,6 @@ declare namespace NodeJS {
 				| 'GITHUB_APP_PRIVATE_KEY'
 				| 'OPENROUTER_API_KEY'
 				| 'KEY_ENCRYPTION_SECRET'
-				| 'ADMIN_SECRET'
 				| 'GITHUB_CLIENT_SECRET'
 				| 'SETUP_SIGNING_SECRET'
 			>
