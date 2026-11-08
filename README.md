@@ -4,9 +4,9 @@
 
 **AlphaPR is a BYOK AI PR reviewer that comments on the exact lines it's talking about — and remembers what it already said.**
 
-Bring your own OpenRouter key, pick any model, install the GitHub App on your repos. Findings land as inline comments on the changed lines, with one-click Apply-suggestion fixes. First push gets a full review; every push after that gets an incremental one, scoped to only what changed, with the bot's previous review as context so it never repeats itself.
+Bring your own API key — OpenRouter, Anthropic, or OpenAI — pick any model, install the GitHub App on your repos. Findings land as inline comments on the changed lines, with one-click Apply-suggestion fixes. First push gets a full review; every push after that gets an incremental one, scoped to only what changed, with the bot's previous review as context so it never repeats itself.
 
-> **Status:** v1.3.0. Stable — the review pipeline, BYOK setup, and configuration surface are settled. New features ship as minor versions; breaking changes will be called out explicitly in the changelog.
+> **Status:** v1.6.0. Stable — the review pipeline, BYOK setup, and configuration surface are settled. New features ship as minor versions; breaking changes will be called out explicitly in the changelog.
 
 ## Features
 
@@ -24,7 +24,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **Fixture-tested adapters** — each provider adapter has contract tests pinning the exact request it sends and response shape it accepts, so a wire-format break fails in CI rather than in production
 - **Costs nothing when it should not run** — draft PRs, `[skip alphapr]` titles, and a re-delivered webhook for an already-reviewed commit are all refused before the first GitHub API call
 - **Token accounting** — each review records what it cost, reported in the check run and stored per PR, so a BYOK tenant can see their spend without leaving GitHub
-- **Multi-provider foundation** — Anthropic and OpenAI provider adapters built alongside OpenRouter, sharing one architecture (not yet live-verified or exposed in setup — see Roadmap)
+- **Multi-provider** — OpenRouter, Anthropic, and OpenAI adapters behind one interface and selectable per installation on the setup page (OpenRouter verified in production; the other two are implemented and contract-tested, but not yet verified against live keys — see Roadmap)
 - **CI-aware reviews** — when the repo's own CI has already failed on the same commit, AlphaPR factors that in as corroborating signal rather than reviewing in isolation
 - **Owner-only configuration** — only account owners and organization admins can change an installation's key or settings; repository collaborators cannot
 - **Skip on demand** — add `[skip alphapr]` anywhere in a PR title to bypass review entirely, at zero cost
@@ -42,7 +42,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 ### Step 2 — Review execution (queue consumer, or inline in free-tier mode)
 
 1. Authenticate as the GitHub App (short-lived JWT → installation access token)
-2. Resolve the installation's own OpenRouter key (stored encrypted), model, provider, and config (severity threshold, tone, ignore paths)
+2. Resolve the installation's own provider API key (stored encrypted), model, provider, and config (severity threshold, tone, ignore paths)
 3. Check D1 state — first review of a PR gets the **full diff**; updates get **only the changes since the last reviewed commit**, plus the bot's previous review as context
 4. Parse and annotate the diff — every line is prefixed with its true line number, and ignored paths (files and their headers) are dropped before the model ever sees them
 5. Fetch any of the repo's own failing CI checks on the same commit, and fold them in as corroborating context for the model's reasoning
@@ -68,7 +68,7 @@ If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and 
 
 **Our own diff parser, because models can't count.** LLMs are unreliable at deriving line numbers from hunk offsets. So AlphaPR computes the numbers itself, hands them to the model inside the annotated diff, and verifies every returned line reference against the parsed diff before posting. The parser tracks hunk-body state explicitly, so extended file-header metadata is handled correctly and hunk content is never mistaken for a header. Hallucinated locations demote gracefully to the summary instead of producing broken comments.
 
-**Encrypted BYOK, because it's multi-tenant.** Each installation stores its own OpenRouter key, AES-GCM encrypted before it touches the database. Keys are configured through an OAuth-verified setup page and deleted when the App is uninstalled.
+**Encrypted BYOK, because it's multi-tenant.** Each installation stores its own provider API key, AES-GCM encrypted before it touches the database. Keys are configured through an OAuth-verified setup page and deleted when the App is uninstalled.
 
 **A provider adapter interface, because "BYOK" shouldn't mean "OpenRouter or nothing."** `ProviderAdapter` normalizes request/response shapes across OpenRouter, Anthropic, and OpenAI behind one interface, with the `Provider` union type centralized in a single file — adding a new provider is a type-checked, exhaustiveness-enforced change, not a search-and-replace across the codebase.
 
@@ -177,7 +177,7 @@ Anyone who installs your App configures their own key at:
 https://<your-worker>.workers.dev/setup
 ```
 
-GitHub OAuth verifies they have access to the installation, then their OpenRouter key is encrypted and stored for that installation only. Open or update a PR after configuring — AlphaPR takes it from there.
+GitHub OAuth verifies they have access to the installation, then their API key is encrypted and stored for that installation only. They also choose the provider (OpenRouter, Anthropic, or OpenAI) and model there. Open or update a PR after configuring — AlphaPR takes it from there.
 
 ### Free-tier deployment
 
@@ -194,15 +194,16 @@ If a review fails in free-tier mode, AlphaPR retries once after a short backoff 
 
 ### Choosing a model
 
-The model is set per installation on the setup page (any model available on OpenRouter works). **Fast, non-reasoning models are recommended** — reasoning models produce deeper analysis but can take minutes per review and require large token budgets; fast models return in seconds and the structured review contract carries the quality. In free-tier mode, fast models are effectively required.
+The model is set per installation on the setup page (any model the chosen provider offers works). **Fast, non-reasoning models are recommended** — reasoning models produce deeper analysis but can take minutes per review and require large token budgets; fast models return in seconds and the structured review contract carries the quality. In free-tier mode, fast models are effectively required.
 
-Direct Anthropic and OpenAI provider selection is implemented in the codebase but **not yet exposed on the setup page** — see Roadmap.
+The provider is chosen on the same page: **OpenRouter** (verified in production), **Anthropic**, or **OpenAI**. The Anthropic and OpenAI adapters are implemented and contract-tested against their wire formats, but have not been verified against live API keys — if you use one and hit a problem, please [open an issue](https://github.com/Ekojoecovenant/alphapr/issues).
 
 ### Configuration
 
 After installing, visit `/setup` to configure per installation:
 
-- **Model** — any OpenRouter model
+- **Provider** — OpenRouter, Anthropic, or OpenAI
+- **Model** — any model the chosen provider offers
 - **Severity threshold** — surface all findings, minor-and-above, or major-only
 - **Review tone** — thorough (fuller explanations) or concise (terser, fewer findings)
 - **Ignore paths** — comma-separated globs (`dist/`, `*.lock`) to skip generated files
