@@ -161,16 +161,18 @@ describe('adapter supportsReasoning capability', () => {
 		expect(anthropicAdapter.supportsReasoning('claude-sonnet-4-5')).toBe(true);
 		expect(anthropicAdapter.supportsReasoning('claude-opus-4-1')).toBe(true);
 		expect(anthropicAdapter.supportsReasoning('claude-3-7-sonnet-latest')).toBe(true);
+		expect(anthropicAdapter.supportsReasoning('claude-opus-5-5')).toBe(true);
+		expect(anthropicAdapter.supportsReasoning('claude-sonnet-5')).toBe(true);
 		// Pre-thinking generation: sending a thinking block to this model is a 400.
 		expect(anthropicAdapter.supportsReasoning('claude-3-5-sonnet-latest')).toBe(false);
 	});
 
-	it('openAI refuses a reasoning budget until the o-series request shape is implemented', () => {
-		// The adapter sends max_tokens, which o-series models reject — so it must
-		// decline even for models that genuinely support reasoning upstream.
-		expect(openAIAdapter.supportsReasoning('o1-preview')).toBe(false);
-		expect(openAIAdapter.supportsReasoning('o3-mini')).toBe(false);
+	it('openAI accepts a reasoning budget only on o-series models', () => {
+		expect(openAIAdapter.supportsReasoning('o1')).toBe(true);
+		expect(openAIAdapter.supportsReasoning('o1-mini')).toBe(true);
+		expect(openAIAdapter.supportsReasoning('o3-mini')).toBe(true);
 		expect(openAIAdapter.supportsReasoning('gpt-4o')).toBe(false);
+		expect(openAIAdapter.supportsReasoning('gpt-4o-mini')).toBe(false);
 	});
 });
 
@@ -318,7 +320,7 @@ describe('anthropicAdapter', () => {
 		expect(url).toBe('https://api.anthropic.com/v1/messages');
 		expect(method).toBe('POST');
 		expect(headers['x-api-key']).toBe('sk-ant-123');
-		expect(headers['anthropic-version']).toBe('2023-06-01');
+		expect(headers['anthropic-version']).toBe('2026-10-21');
 		expect(headers['Content-Type']).toBe('application/json');
 		// Anthropic rejects a Bearer token — it must not be sent.
 		expect(headers.Authorization).toBeUndefined();
@@ -462,7 +464,7 @@ describe('openAIAdapter', () => {
 		expect(body.max_tokens).toBe(1000);
 	});
 
-	it('never sends reasoning or thinking fields', async () => {
+	it('never sends reasoning or thinking fields to a standard chat model', async () => {
 		vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		const { request } = stubFetch(jsonResponse({ choices: [] }));
 		await openAIAdapter.call('sk-openai-123', makeRequest({ reasoningMaxTokens: 2000 }));
@@ -470,6 +472,66 @@ describe('openAIAdapter', () => {
 		const { body } = request();
 		expect(body.reasoning).toBeUndefined();
 		expect(body.thinking).toBeUndefined();
+		expect(body.max_tokens).toBe(1000);
+	});
+
+	it('switches an o-series model to max_completion_tokens (max_tokens is a 400 there)', async () => {
+		const { request } = stubFetch(jsonResponse({ choices: [] }));
+		await openAIAdapter.call('sk-openai-123', makeRequest({ model: 'o3-mini', reasoningMaxTokens: 2000 }));
+
+		const { body } = request();
+		expect(body.max_completion_tokens).toBe(1000);
+		expect(body.max_tokens).toBeUndefined();
+		expect(body.reasoning_effort).toBe('low');
+		expect(body.reasoning).toBeUndefined();
+	});
+
+	it('folds the system prompt into the first user turn for an o-series model', async () => {
+		const { request } = stubFetch(jsonResponse({ choices: [] }));
+		await openAIAdapter.call('sk-openai-123', makeRequest({ model: 'o1' }));
+
+		const { body } = request();
+		// o1/o1-mini/o3-mini all reject a `system` message.
+		expect(body.messages?.some((m: { role: string }) => m.role === 'system')).toBe(false);
+		expect(body.messages).toEqual([{ role: 'user', content: 'SYSTEM\n\nUSER' }]);
+	});
+
+	it('keeps every user turn and only re-homes the system prompt', async () => {
+		const { request } = stubFetch(jsonResponse({ choices: [] }));
+		await openAIAdapter.call(
+			'sk-openai-123',
+			makeRequest({
+				model: 'o3',
+				userMessages: [
+					{ role: 'user', content: 'context' },
+					{ role: 'user', content: 'diff' },
+				],
+			}),
+		);
+
+		expect(request().body.messages).toEqual([
+			{ role: 'user', content: 'SYSTEM\n\ncontext' },
+			{ role: 'user', content: 'diff' },
+		]);
+	});
+
+	it('escalates reasoning_effort with the requested budget', async () => {
+		for (const [budget, effort] of [
+			[2000, 'low'],
+			[8000, 'medium'],
+			[32000, 'high'],
+		] as const) {
+			const { request } = stubFetch(jsonResponse({ choices: [] }));
+			await openAIAdapter.call('sk-openai-123', makeRequest({ model: 'o3-mini', reasoningMaxTokens: budget }));
+			expect(request().body.reasoning_effort).toBe(effort);
+		}
+	});
+
+	it('omits reasoning_effort entirely when no budget is requested', async () => {
+		const { request } = stubFetch(jsonResponse({ choices: [] }));
+		await openAIAdapter.call('sk-openai-123', makeRequest({ model: 'o3-mini' }));
+
+		expect(request().body.reasoning_effort).toBeUndefined();
 	});
 
 	it('attaches a timeout signal so a hung provider cannot stall the queue', async () => {
@@ -481,7 +543,7 @@ describe('openAIAdapter', () => {
 		expect(signal?.aborted).toBe(false);
 	});
 
-	it('warns and drops the reasoning budget, since o-series models are not supported yet', async () => {
+	it('warns when a budget is set on a model that cannot reason', async () => {
 		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		stubFetch(jsonResponse({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }));
 

@@ -21,6 +21,60 @@ const MAX_RETRIES = 2;
 const DEAD_LETTER_DETAIL = 'The review did not finish — the worker was interrupted or timed out. Re-run it by pushing a new commit.';
 
 /**
+ * Free-tier mode has no queue to retry in, so a transient failure gets one
+ * inline retry. The budget is deliberately small: `ctx.waitUntil` work races the
+ * worker's lifetime, and a retry is only worth it when the first attempt failed
+ * *fast* (a 429, a 5xx, a reset connection). An attempt that burned 100s on a
+ * timeout has already spent the allowance, so it is reported instead.
+ */
+const FREE_TIER_ATTEMPTS = 2;
+const FREE_TIER_BACKOFF_MS = 2000;
+const FREE_TIER_RETRY_ELAPSED_LIMIT_MS = 20_000;
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function errorDetail(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Run one review inline (free tier), retrying a transient failure once.
+ * Never throws — every outcome is reported on the PR or the check run.
+ */
+export async function runFreeTierReview(job: ReviewJob, env: Env): Promise<void> {
+	const startedAt = Date.now();
+
+	for (let attempt = 1; attempt <= FREE_TIER_ATTEMPTS; attempt++) {
+		try {
+			await handlePREvent(job, env);
+			return;
+		} catch (err) {
+			const isPermanent = err instanceof PermanentError;
+			const detail = errorDetail(err);
+			const elapsed = Date.now() - startedAt;
+			const canRetry = !isPermanent && attempt < FREE_TIER_ATTEMPTS && elapsed <= FREE_TIER_RETRY_ELAPSED_LIMIT_MS;
+
+			console.error(`Free-tier review failed (attempt ${attempt}/${FREE_TIER_ATTEMPTS}): ${detail}`);
+
+			if (!canRetry) {
+				await surfaceFailure(job, env, isPermanent, false, attempt, FREE_TIER_ATTEMPTS, detail).catch(() => {
+					// best-effort: a failure here must never crash the dispatch path
+				});
+				return;
+			}
+
+			// Tell the PR a retry is coming, so it does not sit on a stale "Reviewing…".
+			await surfaceFailure(job, env, false, true, attempt, FREE_TIER_ATTEMPTS, detail).catch(() => {
+				// best-effort: a failure here must never crash the dispatch path
+			});
+			await sleep(FREE_TIER_BACKOFF_MS);
+		}
+	}
+}
+
+/**
  * Drain the dead-letter queue.
  *
  * Messages only land here when the worker died outside the normal failure path
@@ -151,22 +205,8 @@ export default {
 			};
 
 			if (env.QUEUE_MODE !== 'true') {
-				ctx.waitUntil(
-					handlePREvent(job, env).catch(async (err) => {
-						console.error(`Free-tier review failed (no retry): ${err instanceof Error ? err.message : err}`);
-						await surfaceFailure(
-							job,
-							env,
-							err instanceof PermanentError,
-							false,
-							1,
-							1,
-							err instanceof Error ? err.message : String(err),
-						).catch(() => {
-							// best-effort: a failure here must never crash the free-tier dispatch path
-						});
-					}),
-				);
+				// No queue on the free tier — retry transient failures inline instead.
+				ctx.waitUntil(runFreeTierReview(job, env));
 			} else {
 				await env.REVIEW_QUEUE?.send(job);
 			}
@@ -208,7 +248,7 @@ export default {
 					MAX_RETRIES + 1,
 					err instanceof Error ? err.message : String(err),
 				).catch(() => {
-					// best-effort: a failure here must never crash the free-tier dispatch path
+					// best-effort: a failure here must never crash the queue consumer
 				});
 
 				if (isPermanent || isFinalAttempt) {

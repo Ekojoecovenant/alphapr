@@ -3,6 +3,26 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.6.0] — 2026-11-08
+
+### Added
+
+- Adapter contract tests: 50 tests over `fetch`-stubbed wire formats for all three providers, so a refactor that silently changes a request body or header can no longer pass CI. Mutation-checked — moving Anthropic's `system` into `messages` fails exactly one test, and forcing the reasoning budget always-on fails exactly the two decline-path tests
+- `ProviderAdapter.supportsReasoning(model)` capability: each adapter now answers for itself whether a model accepts reasoning controls, replacing the single global marker list in `llm.ts`. Anthropic answers from a marker list because sending `thinking` to an unsupported model is a hard 400, so an unknown model gets no thinking block
+- Review gate (`src/review-gate.ts`): `ready_for_review` now triggers a review, draft PRs are skipped, `[skip alphapr]` titles are honored, and a push to an already-reviewed commit is not reviewed twice. Skips are reported as a real conclusion ("Already reviewed") instead of leaving a permanent "Reviewing…" status
+- Token accounting: every review records `input_tokens`/`output_tokens` (migration `0008`), shown on the check run as e.g. "12,431 tokens". `formatUsage()` returns null rather than fabricating a zero when a provider reports nothing
+- Dead-letter queue consumer: jobs that exhaust retries are now surfaced on the PR with their attempt count and drained, instead of vanishing silently
+- Provider errors are quoted in the failure comment. A provider 401/403 previously produced only "check your installation's configuration", hiding the actual reason — an exhausted OpenRouter key limit read as a configuration mystery. Details are sanitized (credential-shaped strings redacted, whitespace collapsed, `<`/`>` stripped, 300-char cap) before being posted to a PR
+- OpenAI o-series support: reasoning models are detected by `/^o\d/` and sent `max_completion_tokens` + `reasoning_effort` (derived from the token budget) with the system prompt folded into the first user turn, since o-series rejects a `system` message
+- Anthropic Messages API version bumped `2023-06-01` → `2026-10-21`; the only removals in that migration are `temperature`/`top_p`/`top_k` and block types this adapter does not send. Reasoning markers extended to the Claude 5 family
+- Free-tier retry: one retry after a 2s backoff for transient failures — but only if the first attempt failed fast enough to leave room in the ~30s `waitUntil` budget. Permanent failures and slow failures are reported immediately; the path can never throw
+
+### Fixed
+
+- `package.json` version had drifted to `0.0.0`; the README migration list stopped at `0005` and now covers all eight migrations
+
+[v1.6.0]: <https://github.com/Ekojoecovenant/alphapr/releases/tag/v1.6.0>
+
 ## [v1.5.0] — 2026-08-20
 
 ### Added

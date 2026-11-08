@@ -56,7 +56,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and falls back to a full review — then self-heals its state on the next push.
 
 **Queue mode** (default, requires Workers Paid): retries automatically on transient failures, up to 15 minutes per job, with a dead-letter queue for jobs that fail repeatedly.
-**Free-tier mode** (`QUEUE_MODE` unset or not `"true"`, no queue): runs inline within Cloudflare's ~30-second background execution limit. No retries — a failure is reported once via the status comment and check run. PR description summaries are skipped in this mode.
+**Free-tier mode** (`QUEUE_MODE` unset or not `"true"`, no queue): runs inline within Cloudflare's ~30-second background execution limit. A transient failure gets exactly one retry, and only if the first attempt failed fast enough to leave time; permanent failures (bad key, 4xx) are reported immediately. PR description summaries are skipped in this mode.
 
 ## Why this architecture
 
@@ -181,7 +181,7 @@ GitHub OAuth verifies they have access to the installation, then their OpenRoute
 
 ### Free-tier deployment
 
-AlphaPR can run without Cloudflare Queues, entirely within the free Workers plan. Trade-off: reviews must complete within Cloudflare's ~30-second background execution limit, so **fast, non-reasoning models are required**, **there is no automatic retry**, and **PR description summaries are skipped**.
+AlphaPR can run without Cloudflare Queues, entirely within the free Workers plan. Trade-off: reviews must complete within Cloudflare's ~30-second background execution limit, so **fast, non-reasoning models are required**, retries are limited (one retry, and only if the first attempt failed quickly), and **PR description summaries are skipped**.
 
 To deploy in free-tier mode:
 
@@ -190,7 +190,7 @@ To deploy in free-tier mode:
 3. Skip creating `pr-review-jobs` and `pr-review-dlq` in step 5
 4. When configuring an installation at `/setup`, choose a fast model (e.g. `deepseek/deepseek-v4-flash`)
 
-If a review fails in free-tier mode, re-push or re-open the PR to try again.
+If a review fails in free-tier mode, AlphaPR retries once after a short backoff — but only when the first attempt failed fast enough to leave room within the execution limit. If the retry also fails, or the failure was slow or permanent (e.g. an invalid API key), the reason is reported on the PR and you can re-push or re-open to try again.
 
 ### Choosing a model
 
@@ -249,10 +249,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and 
 ## Roadmap
 
 - **Multi-provider live verification** — the Anthropic and OpenAI adapters are selectable in `/setup` but have not been tested against live API keys; verification (and removing the "unverified" labels) is pending
-- **OpenAI o-series support** — the OpenAI adapter sends the standard chat-completions shape (`max_tokens`), which o-series reasoning models reject; supporting them needs `max_completion_tokens` + `reasoning_effort`, at which point its `supportsReasoning` capability can stop answering `false`
 - **Self-hosted/open-weight direct adapters** — e.g. Ollama, Together AI, or other OpenAI-compatible endpoints for teams running their own open models, alongside OpenRouter/Anthropic/OpenAI
 - **Structured findings from CI context** — currently, the repo's own failing CI checks are folded in as prose context for the model's reasoning; promoting them into first-class anchored `Finding`s (with their own source attribution) is a natural next step
-- **Free-tier retry/backoff logic** — free-tier mode currently has zero retry on transient failures (429s, 5xx); the queue layer handles this today, but free-tier has no equivalent
 - **Agentic analysis toolbox** — repo-aware review: AST queries, cross-file tracing, and doc lookups instead of diff-only analysis. See [ADR](docs/adr/0001-agentic-toolbox-deep-dive-server.md) for the full design.
 - **Managed tier** — eventually: use AlphaPR's own hosted models, no key required
 - **CD** — automatic deployment on merge to `main`, once the manual deploy process has proven stable

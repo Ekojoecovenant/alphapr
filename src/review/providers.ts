@@ -135,11 +135,29 @@ export const openRouterAdapter: ProviderAdapter = {
  * 400, so this defaults to false: a model missing from this list simply gets no
  * budget rather than a broken request. Add new thinking-capable generations here.
  */
-const ANTHROPIC_REASONING_MODEL_MARKERS = ['claude-3-7', 'claude-sonnet-4', 'claude-opus-4', 'claude-haiku-4'] as const;
+const ANTHROPIC_REASONING_MODEL_MARKERS = [
+	'claude-3-7',
+	'claude-sonnet-4',
+	'claude-opus-4',
+	'claude-haiku-4',
+	'claude-sonnet-5',
+	'claude-opus-5',
+	'claude-haiku-5',
+] as const;
 
 function anthropicSupportsReasoning(model: string): boolean {
 	return ANTHROPIC_REASONING_MODEL_MARKERS.some((marker) => model.includes(marker));
 }
+
+/**
+ * Anthropic Messages API version.
+ *
+ * `2023-06-01` is the version every older SDK sends; `2026-10-21` is the current
+ * one. The migration only removes `temperature`/`top_p`/`top_k` and rejects
+ * document/citation blocks this adapter never sends, so the request shape used
+ * here (model, max_tokens, system, messages, thinking) is unchanged.
+ */
+const ANTHROPIC_VERSION = '2026-10-21';
 
 // NOTE: implemented per Anthropic's documented API shape but not yet verified
 // against a live request/response. Test before enabling for any real tenant.
@@ -151,7 +169,7 @@ export const anthropicAdapter: ProviderAdapter = {
 			signal: AbortSignal.timeout(120_000),
 			headers: {
 				'x-api-key': apiKey,
-				'anthropic-version': '2023-06-01',
+				'anthropic-version': ANTHROPIC_VERSION,
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify({
@@ -185,28 +203,67 @@ export const anthropicAdapter: ProviderAdapter = {
 };
 
 /**
- * NOTE: does not support OpenAI's reasoning models (o1/o3 series) — they use
- * a different request shape (max_completion_tokens, no `reasoning` field,
- * different message/temperature constraints). Only standard chat models
- * (gpt-4o, gpt-4o-mini, etc.) are supported by this adapter currently.
+ * OpenAI's o-series reasoning models (o1, o3, o4, …).
  *
+ * Matched by prefix rather than by an explicit list because every oN generation
+ * shares one request shape — but *only* oN: standard chat models reject both
+ * `max_completion_tokens` and `reasoning_effort`.
+ */
+const OPENAI_REASONING_MODEL = /^o\d/;
+
+function openAISupportsReasoning(model: string): boolean {
+	return OPENAI_REASONING_MODEL.test(model);
+}
+
+/**
+ * Map AlphaPR's reasoning-token budget onto OpenAI's coarse effort dial.
+ *
+ * There is no token-for-token translation: `reasoning_effort` is the only
+ * control, so this is a deliberate approximation. A budget at or below 4k
+ * (AlphaPR's default is 2k) means "think, but stay cheap" → `low`; raising the
+ * budget past 4k/16k escalates the dial.
+ */
+function openAIReasoningEffort(budget: number): 'low' | 'medium' | 'high' {
+	if (budget <= 4000) return 'low';
+	if (budget <= 16000) return 'medium';
+	return 'high';
+}
+
+/**
+ * o-series models reject a `system` message (o1, o1-mini and o3-mini all 400 on
+ * it), so the instructions are folded into the first user turn instead.
+ */
+function foldSystemPrompt(systemPrompt: string, messages: ChatRequest['userMessages']): ChatRequest['userMessages'] {
+	const [first, ...rest] = messages;
+	if (!first) return [{ role: 'user', content: systemPrompt }];
+	return [{ ...first, content: `${systemPrompt}\n\n${first.content}` }, ...rest];
+}
+
+/**
  * NOTE: implemented per OpenAI's documented API shape but not yet verified
  * against a live request/response. Test before enabling for any real tenant.
  */
 export const openAIAdapter: ProviderAdapter = {
-	/**
-	 * Always false: this adapter sends the standard chat-completions shape, which
-	 * o-series reasoning models reject — they need `max_completion_tokens` and
-	 * `reasoning_effort` instead of `max_tokens` and a reasoning budget. Flip this
-	 * to a model check once that request path is implemented.
-	 */
-	supportsReasoning: () => false,
+	supportsReasoning: openAISupportsReasoning,
 	async call(apiKey, req) {
-		if (req.reasoningMaxTokens) {
-			console.warn(
-				'openAIAdapter: reasoningMaxTokens was set but is not supported by this adapter (o-series models not yet implemented) — ignoring',
-			);
+		const isReasoningModel = openAISupportsReasoning(req.model);
+		if (!isReasoningModel && req.reasoningMaxTokens) {
+			console.warn(`openAIAdapter: reasoningMaxTokens was set but "${req.model}" is not an o-series reasoning model — ignoring`);
 		}
+
+		const body = isReasoningModel
+			? {
+					model: req.model,
+					// o-series rejects `max_tokens`; the completion budget goes here.
+					max_completion_tokens: req.maxTokens,
+					...(req.reasoningMaxTokens ? { reasoning_effort: openAIReasoningEffort(req.reasoningMaxTokens) } : {}),
+					messages: foldSystemPrompt(req.systemPrompt, req.userMessages),
+				}
+			: {
+					model: req.model,
+					max_tokens: req.maxTokens,
+					messages: [{ role: 'system', content: req.systemPrompt }, ...req.userMessages],
+				};
 
 		const res = await fetch('https://api.openai.com/v1/chat/completions', {
 			method: 'POST',
@@ -215,11 +272,7 @@ export const openAIAdapter: ProviderAdapter = {
 				Authorization: `Bearer ${apiKey}`,
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify({
-				model: req.model,
-				max_tokens: req.maxTokens,
-				messages: [{ role: 'system', content: req.systemPrompt }, ...req.userMessages],
-			}),
+			body: JSON.stringify(body),
 		});
 
 		const rawBody = await res.text();
