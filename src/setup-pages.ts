@@ -1,4 +1,4 @@
-import { BASE_STYLES, PAGE_SCRIPT, SCENE_SCRIPT, THEME_BOOT_SCRIPT } from './setup-styles';
+import { BASE_STYLES, DASHBOARD_STYLES, PAGE_SCRIPT, SCENE_SCRIPT, THEME_BOOT_SCRIPT } from './setup-styles';
 
 export function esc(s: string): string {
 	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -10,23 +10,39 @@ const FONTS =
 const PAGE_SCRIPT_TAG = `<script>${PAGE_SCRIPT}</script>`;
 const SCENE_SCRIPTS = `<script src="https://unpkg.com/three@0.160.0/build/three.min.js" defer></script><script>${SCENE_SCRIPT}</script>`;
 
-function shell(title: string, body: string, opts: { scene?: boolean } = {}): string {
+export interface ShellOptions {
+	scene?: boolean;
+	signedIn?: boolean;
+	login?: string;
+}
+
+export function shell(title: string, body: string, opts: ShellOptions = {}): string {
+	const barRight = [
+		opts.signedIn ? `<a class="bar-link" href="/dashboard">/dashboard</a>` : '',
+		`<a class="bar-link" href="/setup">/setup</a>`,
+		`<a class="bar-link" href="https://github.com/Ekojoecovenant/alphapr">GitHub</a>`,
+		opts.signedIn
+			? `<form class="bar-form" method="POST" action="/auth/logout"><button class="bar-link" type="submit">Sign out${opts.login ? ` @${esc(opts.login)}` : ''}</button></form>`
+			: '',
+		`<button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false" aria-label="Toggle theme">
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>`,
+	]
+		.filter(Boolean)
+		.join('\n    ');
+
 	return `<!DOCTYPE html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title} · AlphaPR</title>
 <meta name="description" content="AlphaPR is a BYOK AI pull-request reviewer that comments on the exact lines it is talking about, and remembers what it already said.">
 <script>${THEME_BOOT_SCRIPT}</script>
 ${FONTS}
-<style>${BASE_STYLES}</style></head><body>
+<style>${BASE_STYLES}${DASHBOARD_STYLES}</style></head><body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-bar"><div class="bar-in">
   <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">AP</span>AlphaPR</a>
   <div class="bar-right">
-    <a class="bar-link" href="/setup">/setup</a>
-    <a class="bar-link" href="https://github.com/Ekojoecovenant/alphapr">GitHub</a>
-    <button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false" aria-label="Toggle theme">
-      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
-      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-    </button>
+    ${barRight}
   </div>
 </div></header>
 <main id="main">
@@ -92,7 +108,7 @@ export interface ConfigFormData {
 export function configFormPage(data: ConfigFormData): string {
 	return shell(
 		'Configure',
-		`${pageHead('Your key. Your model. One page.', 'Every setting AlphaPR reads lives here. The key is encrypted with AES-GCM before it touches the database, and the form is rendered on the server — there is no dashboard behind it.')}
+		`${pageHead('Your key. Your model. One page.', 'Every setting AlphaPR reads lives here. The key is encrypted with AES-GCM before it touches the database, and the form is rendered on the server. Your installations, repos and settings are listed on the <a href="/dashboard">dashboard</a>.')}
         <div class="setup-card">
           <div class="setup-head"><span class="path">alphapr-ai <span>/ setup</span></span><span>server-rendered</span></div>
           <form method="POST" action="/setup/save">
@@ -310,8 +326,8 @@ export function landingPage(): string {
     <header class="sec-head">
       <p class="sec-index"><span>02</span> / how it works</p>
       <div>
-        <h2 class="sec-title" id="how-title">Three moves, no dashboard.</h2>
-        <p class="lede">There is no new tab to live in. AlphaPR sits where the review already happens: the GitHub App, the pull request, the commit SHA.</p>
+        <h2 class="sec-title" id="how-title">Three moves, then it stays out of the way.</h2>
+        <p class="lede">AlphaPR sits where the review already happens: the GitHub App, the pull request, the commit SHA. There is a dashboard for the one thing GitHub cannot show you — which repos are being reviewed, and what the last review cost.</p>
       </div>
     </header>
     <ol class="steps">

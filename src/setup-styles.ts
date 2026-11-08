@@ -348,6 +348,39 @@ form { padding: 26px 22px; }
 }
 `;
 
+/** Dashboard chrome (ADR 0002). Kept separate so the marketing pages stay untouched. */
+export const DASHBOARD_STYLES = `
+.dash { padding: 52px 0 96px; }
+.kicker { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+.user-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+.user-strip .who { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+.avatar { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper-3); }
+.user-strip form { padding: 0; border: 0; background: none; }
+.user-strip .btn { padding: 6px 12px; font-size: 12px; }
+.dash-alert { border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); background: var(--danger-soft); border-radius: var(--radius); padding: 18px 20px; margin: 26px 0 10px; }
+.dash-alert h2 { font-size: 0.98rem; margin-bottom: 8px; }
+.dash-alert p, .dash-alert li { font-size: 13.5px; color: var(--ink-2); }
+.dash-alert ul { margin: 8px 0 0; padding-left: 18px; }
+.dash-alert code { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.inst { border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-2); padding: 22px 24px; margin-top: 16px; box-shadow: var(--shadow); }
+.inst-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 14px; }
+.inst-name { font-family: var(--font-mono); font-size: 16px; letter-spacing: -0.01em; }
+.inst-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); }
+.inst-meta b { font-weight: 500; color: var(--ink-2); }
+.repo-list { list-style: none; margin: 18px 0 0; padding: 0; border-top: 1px solid var(--line); }
+.repo { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.repo:last-child { border-bottom: 0; }
+.repo-name { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.repo-state { margin-left: auto; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.repo-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
+.repo-dot.is-off { background: var(--line-strong); }
+.inst-empty { font-size: 13px; color: var(--ink-3); margin-top: 14px; }
+@media (max-width: 620px) {
+  .inst { padding: 18px 16px; }
+  .user-strip .who { width: 100%; }
+}
+`;
+
 /** Runs in <head> before first paint so the page never flashes the wrong theme. */
 export const THEME_BOOT_SCRIPT = `(function(){var s=null;try{s=localStorage.getItem('alphapr-theme')}catch(e){}var d=s?s==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.setAttribute('data-theme',d?'dark':'light')})();`;
 

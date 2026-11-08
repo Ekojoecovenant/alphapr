@@ -20,7 +20,7 @@ export async function hmacVerify(data: string, sig: string, secret: string): Pro
 	return diff === 0;
 }
 
-function randomHex(bytes: number): string {
+export function randomHex(bytes: number): string {
 	const buf = crypto.getRandomValues(new Uint8Array(bytes));
 	return Array.from(buf)
 		.map((b) => b.toString(16).padStart(2, '0'))
