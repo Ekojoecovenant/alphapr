@@ -15,11 +15,28 @@ import { createAppJWT, getInstallationToken } from './github/auth';
 import { parseDiff } from './review/diff';
 import { type Finding, generateSummary, type ReviewResult, reviewDiff, summarizeExternalChecks } from './review/llm';
 import { type Provider, parseProvider } from './review/provider-types';
-import { modelSupportsReasoning } from './review/providers';
 import { mergeSummaryIntoDescription, renderAnchoredComment, renderForMemory, renderSummary, sortFindings } from './review/render';
+import { formatUsage } from './review/usage';
+import { isAlreadyReviewed } from './review-gate';
 import type { CheckConclusion, ReviewCommentInput, ReviewJob } from './types';
 
 export type { ReviewJob };
+
+/**
+ * Reduce an upstream error message to one safe, quotable line for a public PR
+ * comment. A provider 4xx body is often the only explanation a tenant gets
+ * (e.g. "Key limit exceeded"), so it is worth surfacing — but it must never
+ * carry a credential, contain markup, or run away with the comment.
+ */
+export function sanitizeDetail(detail: string): string {
+	const collapsed = detail
+		.replace(/\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}/g, '[redacted]')
+		.replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [redacted]')
+		.replace(/\s+/g, ' ')
+		.replace(/[<>]/g, '')
+		.trim();
+	return collapsed.length > 300 ? `${collapsed.slice(0, 300)}…` : collapsed;
+}
 
 export async function surfaceFailure(
 	job: ReviewJob,
@@ -28,6 +45,7 @@ export async function surfaceFailure(
 	willRetry: boolean,
 	attempt?: number,
 	maxAttempts?: number,
+	detail?: string,
 ): Promise<void> {
 	if (job.statusCommentId === null && job.checkRunId === null) return;
 
@@ -35,12 +53,14 @@ export async function surfaceFailure(
 	const token = await getInstallationToken(jwt, job.installationId);
 
 	const attemptSuffix = attempt && maxAttempts ? ` (attempt ${attempt}/${maxAttempts})` : '';
+	const reason = detail ? sanitizeDetail(detail) : '';
+	const explanation = reason ? `\n\n> ${reason}` : '';
 
 	const commentText = isPermanent
-		? `⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration.${attemptSuffix}`
+		? `⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration.${explanation}${attemptSuffix}`
 		: willRetry
 			? `⚠️ **AlphaPR review failed.** Retrying automatically…${attemptSuffix}`
-			: `⚠️ **AlphaPR review failed.** All retry attempts exhausted.${attemptSuffix}`;
+			: `⚠️ **AlphaPR review failed.** All retry attempts exhausted.${explanation}${attemptSuffix}`;
 
 	if (job.statusCommentId !== null) {
 		try {
@@ -67,6 +87,38 @@ export async function surfaceFailure(
 					isPermanent ? "This won't be retried." : `All retry attempts exhausted.${attemptSuffix}`,
 				);
 			}
+		} catch {
+			/* never let status-surfacing throw further */
+		}
+	}
+}
+
+/**
+ * Resolve the status comment and check run for a review that was skipped as a
+ * duplicate, so a no-op dispatch never leaves the PR showing "Reviewing…".
+ */
+async function concludeAlreadyReviewed(job: ReviewJob, token: string): Promise<void> {
+	const text = '✅ **Already reviewed.** This commit is identical to the one AlphaPR last reviewed, so there is nothing new to report.';
+
+	if (job.statusCommentId !== null) {
+		try {
+			await editComment(token, job.owner, job.repo, job.statusCommentId, text);
+		} catch {
+			/* best-effort: the check run below is the other signal */
+		}
+	}
+
+	if (job.checkRunId !== null) {
+		try {
+			await completeCheckRun(
+				token,
+				job.owner,
+				job.repo,
+				job.checkRunId,
+				'success',
+				'Already reviewed',
+				'No changes since the last review.',
+			);
 		} catch {
 			/* never let status-surfacing throw further */
 		}
@@ -108,12 +160,14 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 		const setupMessage = `⚙️ **AlphaPR is installed but not configured yet.**\n\nAn OpenRouter API key is needed for this installation. Configure it at https://alphapr.covenantekojoe.workers.dev/setup — once configured, close and re-open this PR to trigger a review.`;
 
 		if (job.statusCommentId !== null) {
-			if (job.action === 'opened') {
+			// A synchronize job always follows a prior review, so its status comment
+			// already exists. A first-time action (opened / ready_for_review) may not.
+			if (job.action !== 'synchronize') {
 				await editComment(token, job.owner, job.repo, job.statusCommentId, setupMessage);
 			} else {
 				await editComment(token, job.owner, job.repo, job.statusCommentId, '⚙️ Not configured — see setup instructions above.');
 			}
-		} else if (job.action === 'opened') {
+		} else if (job.action !== 'synchronize') {
 			await postReviewComment(token, job.owner, job.repo, job.prNumber, setupMessage);
 		}
 
@@ -133,6 +187,19 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 	// ─── end BYOK resolution ───
 
 	const state = await getReviewState(env.DB, job.repoFullName, job.prNumber);
+
+	// Race guard: two deliveries for the same push can both be dispatched before
+	// either review has saved its state. index.ts already refuses the obvious
+	// duplicates, but this is the check that actually holds under concurrency —
+	// re-reviewing an identical commit posts duplicate comments and burns a full
+	// LLM call. Resolve the status comment and check run before stopping, so the
+	// PR is never left showing "Reviewing…".
+	if (isAlreadyReviewed(state?.last_reviewed_sha, job.headSha)) {
+		console.log(`⏭️ PR #${job.prNumber} commit ${job.headSha.slice(0, 7)} already reviewed — concluding instead of re-reviewing`);
+		await concludeAlreadyReviewed(job, token);
+		return;
+	}
+
 	const incremental = state !== null && job.action === 'synchronize';
 
 	const compareUrl = `https://api.github.com/repos/${job.owner}/${job.repo}/compare/${state?.last_reviewed_sha}...${job.headSha}`;
@@ -190,7 +257,6 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 			model,
 			reviewTone,
 			provider,
-			supportsReasoning: modelSupportsReasoning(model),
 		},
 		usedIncremental ? (state!.last_review_body ?? undefined) : undefined,
 		externalContext,
@@ -272,23 +338,19 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 					? 'neutral'
 					: 'success';
 		const title = displayResult.raw ? 'Review posted' : displayResult.verdict;
+		const tokenCost = formatUsage(result.usage);
+		const checkSummary = [`${anchoredCount} inline comment${anchoredCount === 1 ? '' : 's'}, ${unanchored.length} in summary.`, tokenCost]
+			.filter(Boolean)
+			.join(' ');
 		try {
-			await completeCheckRun(
-				token,
-				job.owner,
-				job.repo,
-				job.checkRunId,
-				conclusion,
-				title,
-				`${anchoredCount} inline comment${anchoredCount === 1 ? '' : 's'}, ${unanchored.length} in summary.`,
-			);
+			await completeCheckRun(token, job.owner, job.repo, job.checkRunId, conclusion, title, checkSummary);
 		} catch (err) {
 			console.error(`Failed to complete check run: ${err instanceof Error ? err.message : err}`);
 		}
 	}
 
 	try {
-		await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, renderForMemory(result));
+		await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, renderForMemory(result), result.usage);
 	} catch (err) {
 		console.error(`Failed to save review state (comments already posted): ${err instanceof Error ? err.message : err}`);
 	}

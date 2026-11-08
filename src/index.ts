@@ -1,12 +1,51 @@
-import { deleteInstallation, upsertInstallation } from './db';
+import { deleteInstallation, getReviewState, upsertInstallation } from './db';
 import { PermanentError } from './errors';
 import { createCheckRun, postReviewComment } from './github/api';
 import { createAppJWT, getInstallationToken } from './github/auth';
+import { decideReview, isReviewAction } from './review-gate';
 import { handlePREvent, type ReviewJob, surfaceFailure } from './review-handler';
 import { handleSetup } from './setup';
 import { landingPage } from './setup-pages';
-import { shouldSkipReview } from './skip-review';
 import { verifySignature } from './verify';
+
+/** Queue name is declared in wrangler.jsonc — keep these in sync. */
+const DEAD_LETTER_QUEUE_NAME = 'pr-review-dlq';
+
+/** Must match wrangler.jsonc's consumer `max_retries` for pr-review-jobs. */
+const MAX_RETRIES = 2;
+
+/**
+ * Dead-lettered jobs carry no error text (the worker that failed is gone), so
+ * the surfaced reason has to be stated rather than quoted.
+ */
+const DEAD_LETTER_DETAIL = 'The review did not finish — the worker was interrupted or timed out. Re-run it by pushing a new commit.';
+
+/**
+ * Drain the dead-letter queue.
+ *
+ * Messages only land here when the worker died outside the normal failure path
+ * — a timeout, a crash, or a restart mid-review — so nothing was ever reported
+ * to the PR. Log each one loudly and surface a failure, otherwise a PR sits
+ * looking untouched with no review and no explanation.
+ */
+async function handleDeadLetter(batch: MessageBatch<ReviewJob>, env: Env): Promise<void> {
+	for (const message of batch.messages) {
+		const job = message.body;
+		const where = job ? `${job.owner}/${job.repo} #${job.prNumber} @${job.headSha.slice(0, 7)}` : '(unreadable body)';
+
+		console.error(
+			`💀 Dead-lettered review job ${where} (action=${job?.action ?? 'unknown'}, attempts=${message.attempts}) — the review never completed and was not reported.`,
+		);
+
+		if (job) {
+			await surfaceFailure(job, env, false, false, message.attempts, MAX_RETRIES + 1, DEAD_LETTER_DETAIL).catch(() => {
+				// best-effort: draining must never fail on a status-surface error
+			});
+		}
+
+		message.ack(); // nothing else can be done — drain so the queue does not accumulate
+	}
+}
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -47,9 +86,28 @@ export default {
 			return new Response('ok', { status: 200 });
 		}
 
-		if (event === 'pull_request' && (payload.action === 'opened' || payload.action === 'synchronize')) {
-			if (shouldSkipReview(payload.pull_request.title)) {
-				console.log(`⏭️ Skipping review for PR #${payload.number} — title contains "[skip alphapr]"`);
+		if (event === 'pull_request' && isReviewAction(payload.action)) {
+			const pullRequest = payload.pull_request;
+
+			// Best-effort dedupe lookup: a database hiccup must never suppress a
+			// review, so a failure here falls through to reviewing as normal.
+			let lastReviewedSha: string | null = null;
+			try {
+				const prior = await getReviewState(env.DB, payload.repository.full_name, payload.number);
+				lastReviewedSha = prior?.last_reviewed_sha ?? null;
+			} catch (err) {
+				console.error(`Could not read review state for dedupe (reviewing anyway): ${err instanceof Error ? err.message : err}`);
+			}
+
+			const decision = decideReview({
+				draft: pullRequest.draft,
+				title: pullRequest.title,
+				headSha: pullRequest.head.sha,
+				lastReviewedSha,
+			});
+
+			if (!decision.run) {
+				console.log(`⏭️ Skipping review for PR #${payload.number} (${decision.reason})`);
 				return new Response('ok', { status: 200 });
 			}
 
@@ -57,7 +115,7 @@ export default {
 			const owner = payload.repository.owner.login;
 			const repo = payload.repository.name;
 			const prNumber = payload.number;
-			const headSha = payload.pull_request.head.sha;
+			const headSha = pullRequest.head.sha;
 
 			let statusCommentId: number | null = null;
 			let checkRunId: number | null = null;
@@ -96,7 +154,15 @@ export default {
 				ctx.waitUntil(
 					handlePREvent(job, env).catch(async (err) => {
 						console.error(`Free-tier review failed (no retry): ${err instanceof Error ? err.message : err}`);
-						await surfaceFailure(job, env, err instanceof PermanentError, false, 1, 1).catch(() => {
+						await surfaceFailure(
+							job,
+							env,
+							err instanceof PermanentError,
+							false,
+							1,
+							1,
+							err instanceof Error ? err.message : String(err),
+						).catch(() => {
 							// best-effort: a failure here must never crash the free-tier dispatch path
 						});
 					}),
@@ -110,7 +176,10 @@ export default {
 	},
 
 	async queue(batch: MessageBatch<ReviewJob>, env: Env): Promise<void> {
-		const MAX_RETRIES = 2; // must match wrangler.jsonc's consumer max_retries
+		if (batch.queue === DEAD_LETTER_QUEUE_NAME) {
+			await handleDeadLetter(batch, env);
+			return;
+		}
 
 		for (const message of batch.messages) {
 			try {
@@ -130,7 +199,15 @@ export default {
 				}
 
 				const willRetry = !isPermanent && !isFinalAttempt;
-				await surfaceFailure(message.body, env, isPermanent, willRetry, message.attempts, MAX_RETRIES + 1).catch(() => {
+				await surfaceFailure(
+					message.body,
+					env,
+					isPermanent,
+					willRetry,
+					message.attempts,
+					MAX_RETRIES + 1,
+					err instanceof Error ? err.message : String(err),
+				).catch(() => {
 					// best-effort: a failure here must never crash the free-tier dispatch path
 				});
 

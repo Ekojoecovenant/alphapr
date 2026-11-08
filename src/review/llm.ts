@@ -1,5 +1,5 @@
 import { PermanentError } from '../errors';
-import { OtherCheckRun } from '../types';
+import type { OtherCheckRun, TokenUsage } from '../types';
 import { Provider } from './provider-types';
 import { getAdapter } from './providers';
 
@@ -21,6 +21,8 @@ export interface ReviewResult {
 	findings: Finding[];
 	/** Set when the model's output couldn't be parsed as JSON — raw text fallback */
 	raw?: string;
+	/** What this review call cost in tokens, when the provider reported it. */
+	usage?: TokenUsage | null;
 }
 
 const SYSTEM_PROMPT = `You are a precise code reviewer. You receive a unified diff in which every line of the NEW version of each file is prefixed with its line number, like "42: + const x = 1;".
@@ -52,6 +54,9 @@ RULES:
 - "endLine" is optional. Set it ONLY when "suggestion" replaces MORE THAN ONE line. In that case "line" is the FIRST line of the span and "endLine" is the LAST line — both must be numeric prefixes shown in the diff for that file, and "suggestion" must contain the FULL replacement for every line from "line" through "endLine" inclusive. If your suggestion only touches a single line, omit "endLine" entirely.`;
 
 const VALID_SEVERITIES = new Set<string>(['major', 'minor', 'nit']);
+
+/** Cap on thinking tokens, so a reasoning model cannot spend the entire output allowance on reasoning. */
+const REASONING_BUDGET_TOKENS = 2000;
 
 function tryParse(text: string): ReviewResult | null {
 	try {
@@ -147,7 +152,6 @@ export interface ReviewConfig {
 	apiKey: string;
 	model: string;
 	reviewTone: 'thorough' | 'concise';
-	supportsReasoning?: boolean;
 	provider: Provider;
 }
 
@@ -174,7 +178,6 @@ export async function reviewDiff(
 		role: 'user',
 		content: `Review this pull request diff:\n\n${annotatedDiff}`,
 	});
-	// ... rest unchanged
 
 	const toneInstruction =
 		config.reviewTone === 'concise'
@@ -187,7 +190,9 @@ export async function reviewDiff(
 		systemPrompt: SYSTEM_PROMPT + toneInstruction,
 		userMessages,
 		maxTokens: 16000,
-		reasoningMaxTokens: config.supportsReasoning ? 2000 : undefined,
+		// Support is provider- and model-specific, so the adapter decides — the
+		// review path never guesses from the model string itself.
+		reasoningMaxTokens: adapter.supportsReasoning(config.model) ? REASONING_BUDGET_TOKENS : undefined,
 	});
 
 	if (!result.ok) {
@@ -204,10 +209,10 @@ export async function reviewDiff(
 	}
 
 	const parsed = parseReviewJson(result.data.content);
-	if (parsed) return parsed;
+	if (parsed) return { ...parsed, usage: result.data.usage };
 
 	console.log('Review output was not valid JSON; falling back to raw text');
-	return { verdict: '', findings: [], raw: result.data.content.trim() };
+	return { verdict: '', findings: [], raw: result.data.content.trim(), usage: result.data.usage };
 }
 
 // ========== SUMMARY ============ //

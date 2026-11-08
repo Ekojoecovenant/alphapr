@@ -55,6 +55,15 @@
 				"max_batch_size": 1,
 				"max_retries": 2,
 				"dead_letter_queue": "pr-review-dlq"
+			},
+			// Drains the dead-letter queue. Jobs arrive here only when the worker
+			// died outside the normal failure path (timeout, crash, restart), so
+			// nothing was reported to the PR. The handler logs them and surfaces a
+			// failure; it always acks, so no retries are configured.
+			{
+				"queue": "pr-review-dlq",
+				"max_batch_size": 10,
+				"max_retries": 0
 			}
 		]
 	},
