@@ -104,7 +104,12 @@ describe('getAdapter', () => {
 
 	it('has an adapter for every declared provider (exhaustiveness)', () => {
 		for (const provider of PROVIDERS) {
-			expect(typeof getAdapter(provider).call).toBe('function');
+			const adapter = getAdapter(provider);
+			expect(typeof adapter.call).toBe('function');
+			// Every adapter must be able to answer the capability question — a
+			// missing implementation here is what silently disabled reasoning
+			// budgets in the old single-heuristic design.
+			expect(typeof adapter.supportsReasoning).toBe('function');
 		}
 	});
 });
@@ -143,6 +148,29 @@ describe('modelSupportsReasoning', () => {
 		expect(modelSupportsReasoning('deepseek/deepseek-v4-flash')).toBe(false);
 		expect(modelSupportsReasoning('gpt-4o')).toBe(false);
 		expect(modelSupportsReasoning('anthropic/claude-sonnet-4-5')).toBe(false);
+	});
+});
+
+describe('adapter supportsReasoning capability', () => {
+	it('openRouter delegates to the upstream model-marker check', () => {
+		expect(openRouterAdapter.supportsReasoning('deepseek/deepseek-v4-pro')).toBe(true);
+		expect(openRouterAdapter.supportsReasoning('deepseek/deepseek-v4-flash')).toBe(false);
+	});
+
+	it('anthropic accepts thinking only on thinking-capable Claude generations', () => {
+		expect(anthropicAdapter.supportsReasoning('claude-sonnet-4-5')).toBe(true);
+		expect(anthropicAdapter.supportsReasoning('claude-opus-4-1')).toBe(true);
+		expect(anthropicAdapter.supportsReasoning('claude-3-7-sonnet-latest')).toBe(true);
+		// Pre-thinking generation: sending a thinking block to this model is a 400.
+		expect(anthropicAdapter.supportsReasoning('claude-3-5-sonnet-latest')).toBe(false);
+	});
+
+	it('openAI refuses a reasoning budget until the o-series request shape is implemented', () => {
+		// The adapter sends max_tokens, which o-series models reject — so it must
+		// decline even for models that genuinely support reasoning upstream.
+		expect(openAIAdapter.supportsReasoning('o1-preview')).toBe(false);
+		expect(openAIAdapter.supportsReasoning('o3-mini')).toBe(false);
+		expect(openAIAdapter.supportsReasoning('gpt-4o')).toBe(false);
 	});
 });
 

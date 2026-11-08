@@ -243,7 +243,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and 
 ## Roadmap
 
 - **Multi-provider live verification** — the Anthropic and OpenAI adapters are selectable in `/setup` but have not been tested against live API keys; verification (and removing the "unverified" labels) is pending
-- **Provider capability interface** — replace the `model.includes("-pro")` reasoning-support heuristic with a proper per-adapter capability check
+- **OpenAI o-series support** — the OpenAI adapter sends the standard chat-completions shape (`max_tokens`), which o-series reasoning models reject; supporting them needs `max_completion_tokens` + `reasoning_effort`, at which point its `supportsReasoning` capability can stop answering `false`
 - **Self-hosted/open-weight direct adapters** — e.g. Ollama, Together AI, or other OpenAI-compatible endpoints for teams running their own open models, alongside OpenRouter/Anthropic/OpenAI
 - **Structured findings from CI context** — currently, the repo's own failing CI checks are folded in as prose context for the model's reasoning; promoting them into first-class anchored `Finding`s (with their own source attribution) is a natural next step
 - **Free-tier retry/backoff logic** — free-tier mode currently has zero retry on transient failures (429s, 5xx); the queue layer handles this today, but free-tier has no equivalent

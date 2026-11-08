@@ -15,7 +15,6 @@ import { createAppJWT, getInstallationToken } from './github/auth';
 import { parseDiff } from './review/diff';
 import { type Finding, generateSummary, type ReviewResult, reviewDiff, summarizeExternalChecks } from './review/llm';
 import { type Provider, parseProvider } from './review/provider-types';
-import { modelSupportsReasoning } from './review/providers';
 import { mergeSummaryIntoDescription, renderAnchoredComment, renderForMemory, renderSummary, sortFindings } from './review/render';
 import type { CheckConclusion, ReviewCommentInput, ReviewJob } from './types';
 
@@ -190,7 +189,6 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 			model,
 			reviewTone,
 			provider,
-			supportsReasoning: modelSupportsReasoning(model),
 		},
 		usedIncremental ? (state!.last_review_body ?? undefined) : undefined,
 		externalContext,

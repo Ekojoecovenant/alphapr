@@ -18,6 +18,19 @@ export type ChatResult = { ok: true; data: ChatResponse } | { ok: false; status:
 
 export interface ProviderAdapter {
 	call(apiKey: string, req: ChatRequest): Promise<ChatResult>;
+	/**
+	 * Whether this provider can honour a reasoning-token budget for `model`.
+	 *
+	 * Asked per-adapter, not globally, because support is both provider- and
+	 * model-specific: OpenRouter proxies arbitrary upstreams (so the model id is
+	 * the only signal), Anthropic gates extended thinking behind specific model
+	 * generations (an unsupported model with a thinking block is a hard 400),
+	 * and OpenAI's o-series needs a different request shape than this adapter
+	 * sends.
+	 *
+	 * Returning false is always safe — the request just omits the budget.
+	 */
+	supportsReasoning(model: string): boolean;
 }
 
 export function getAdapter(provider: Provider): ProviderAdapter {
@@ -32,11 +45,12 @@ export function getAdapter(provider: Provider): ProviderAdapter {
 }
 
 /**
- * Models known to support reasoning, requiring a reasoning-token cap so the
- * thinking budget doesn't consume the entire output allowance.
+ * OpenRouter's reasoning-model detection.
  *
- * Matched by substring against the configured model string. Add new reasoning
- * models here — this is the only place that needs to change.
+ * OpenRouter proxies arbitrary upstream providers, so the model id is the only
+ * signal available about whether it supports a reasoning budget. Matched by
+ * substring against the configured model string. Add new reasoning models
+ * here — this is the only place that needs to change.
  *
  * TODO: replace with real capability detection via OpenRouter's /models
  * endpoint (`supported_parameters` includes "reasoning"), cached per model.
@@ -48,6 +62,7 @@ export function modelSupportsReasoning(model: string): boolean {
 }
 
 export const openRouterAdapter: ProviderAdapter = {
+	supportsReasoning: modelSupportsReasoning,
 	async call(apiKey, req) {
 		const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
 			method: 'POST',
@@ -84,9 +99,23 @@ export const openRouterAdapter: ProviderAdapter = {
 	},
 };
 
+/**
+ * Claude models that accept an extended-thinking budget.
+ *
+ * Combining a `thinking` block with a model that does not support it is a hard
+ * 400, so this defaults to false: a model missing from this list simply gets no
+ * budget rather than a broken request. Add new thinking-capable generations here.
+ */
+const ANTHROPIC_REASONING_MODEL_MARKERS = ['claude-3-7', 'claude-sonnet-4', 'claude-opus-4', 'claude-haiku-4'] as const;
+
+function anthropicSupportsReasoning(model: string): boolean {
+	return ANTHROPIC_REASONING_MODEL_MARKERS.some((marker) => model.includes(marker));
+}
+
 // NOTE: implemented per Anthropic's documented API shape but not yet verified
 // against a live request/response. Test before enabling for any real tenant.
 export const anthropicAdapter: ProviderAdapter = {
+	supportsReasoning: anthropicSupportsReasoning,
 	async call(apiKey, req) {
 		const res = await fetch('https://api.anthropic.com/v1/messages', {
 			method: 'POST',
@@ -134,6 +163,13 @@ export const anthropicAdapter: ProviderAdapter = {
  * against a live request/response. Test before enabling for any real tenant.
  */
 export const openAIAdapter: ProviderAdapter = {
+	/**
+	 * Always false: this adapter sends the standard chat-completions shape, which
+	 * o-series reasoning models reject — they need `max_completion_tokens` and
+	 * `reasoning_effort` instead of `max_tokens` and a reasoning budget. Flip this
+	 * to a model check once that request path is implemented.
+	 */
+	supportsReasoning: () => false,
 	async call(apiKey, req) {
 		if (req.reasoningMaxTokens) {
 			console.warn(

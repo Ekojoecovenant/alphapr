@@ -53,6 +53,9 @@ RULES:
 
 const VALID_SEVERITIES = new Set<string>(['major', 'minor', 'nit']);
 
+/** Cap on thinking tokens, so a reasoning model cannot spend the entire output allowance on reasoning. */
+const REASONING_BUDGET_TOKENS = 2000;
+
 function tryParse(text: string): ReviewResult | null {
 	try {
 		const data = JSON.parse(text) as { verdict?: unknown; findings?: unknown };
@@ -147,7 +150,6 @@ export interface ReviewConfig {
 	apiKey: string;
 	model: string;
 	reviewTone: 'thorough' | 'concise';
-	supportsReasoning?: boolean;
 	provider: Provider;
 }
 
@@ -186,7 +188,9 @@ export async function reviewDiff(
 		systemPrompt: SYSTEM_PROMPT + toneInstruction,
 		userMessages,
 		maxTokens: 16000,
-		reasoningMaxTokens: config.supportsReasoning ? 2000 : undefined,
+		// Support is provider- and model-specific, so the adapter decides — the
+		// review path never guesses from the model string itself.
+		reasoningMaxTokens: adapter.supportsReasoning(config.model) ? REASONING_BUDGET_TOKENS : undefined,
 	});
 
 	if (!result.ok) {

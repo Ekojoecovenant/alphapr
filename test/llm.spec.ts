@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { parseReviewJson } from '../src/review/llm';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseReviewJson, reviewDiff } from '../src/review/llm';
 
 describe('parseReviewJson', () => {
 	it('parses clean, unfenced JSON directly', () => {
@@ -170,5 +170,92 @@ I'll write it.\`\`\`json
 		const result = parseReviewJson(text);
 
 		expect(result?.findings[0].endLine).toBeUndefined();
+	});
+});
+
+/**
+ * The reasoning budget is decided by the adapter, not by sniffing the model
+ * string upstream — these tests pin that wiring end-to-end, so a regression
+ * that reintroduces a global heuristic fails here.
+ */
+describe('reviewDiff reasoning-budget wiring', () => {
+	function stubFetchCapturingBody() {
+		let body: Record<string, unknown> | undefined;
+		const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+			const reviewJson = '{"verdict":"ok","findings":[]}';
+			// Each provider answers with its own response shape.
+			const payload = String(input).includes('api.anthropic.com')
+				? { content: [{ type: 'text', text: reviewJson }], stop_reason: 'end_turn' }
+				: { choices: [{ message: { content: reviewJson }, finish_reason: 'stop' }] };
+			return new Response(JSON.stringify(payload), { status: 200 });
+		});
+		vi.stubGlobal('fetch', fetchMock);
+		return () => {
+			if (!body) throw new Error('fetch was never called');
+			return body;
+		};
+	}
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	it('sends a reasoning budget when the adapter reports the model supports it', async () => {
+		const body = stubFetchCapturingBody();
+
+		await reviewDiff('diff', {
+			apiKey: 'key',
+			model: 'deepseek/deepseek-v4-pro',
+			reviewTone: 'thorough',
+			provider: 'openrouter',
+		});
+
+		expect(body().reasoning).toEqual({ max_tokens: 2000 });
+	});
+
+	it('omits the budget when the adapter declines', async () => {
+		const body = stubFetchCapturingBody();
+
+		await reviewDiff('diff', {
+			apiKey: 'key',
+			model: 'deepseek/deepseek-v4-flash',
+			reviewTone: 'thorough',
+			provider: 'openrouter',
+		});
+
+		expect(body().reasoning).toBeUndefined();
+	});
+
+	it('never asks OpenAI for a reasoning budget, and never warns about dropping one', async () => {
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const body = stubFetchCapturingBody();
+
+		await reviewDiff('diff', {
+			apiKey: 'key',
+			model: 'o1-preview',
+			reviewTone: 'thorough',
+			provider: 'openai',
+		});
+
+		expect(body().reasoning).toBeUndefined();
+		// The budget is never requested, so the adapter's "dropping it" warning
+		// must not fire — that warning means a caller bypassed the capability check.
+		expect(warnSpy).not.toHaveBeenCalled();
+	});
+
+	it('maps a thinking-capable Claude model onto Anthropic thinking tokens', async () => {
+		const body = stubFetchCapturingBody();
+
+		await reviewDiff('diff', {
+			apiKey: 'key',
+			model: 'claude-sonnet-4-5',
+			reviewTone: 'thorough',
+			provider: 'anthropic',
+		});
+
+		expect(body().thinking).toEqual({ type: 'enabled', budget_tokens: 2000 });
+		expect(body().system).toBeTypeOf('string');
 	});
 });
