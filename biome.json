@@ -98,7 +98,7 @@
 				"useNamespaceKeyword": "error"
 			}
 		},
-		"includes": ["**", "!node_modules/**", "!.wrangler/**", "!dist/**", "!worker-configuration.d.ts"]
+		"includes": ["**", "!node_modules/**", "!.wrangler/**", "!dist/**", "!docs/design/**", "!worker-configuration.d.ts"]
 	},
 	"javascript": {
 		"formatter": {

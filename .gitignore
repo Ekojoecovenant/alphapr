@@ -165,3 +165,8 @@ dist
 .env*
 !.env.example
 .wrangler/
+
+# local design previews (screenshots, rendered pages)
+.preview/
+docs/design/.shots/
+
