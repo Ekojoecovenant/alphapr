@@ -45,10 +45,10 @@ function makeMessage(overrides: Partial<ReviewJob> = {}, attempts = 1): MockMess
 	};
 }
 
-function makeBatch(messages: MockMessage[]): MessageBatch<ReviewJob> {
+function makeBatch(messages: MockMessage[], queue = 'pr-review-jobs'): MessageBatch<ReviewJob> {
 	return {
 		messages: messages as unknown as MessageBatch<ReviewJob>['messages'],
-		queue: 'pr-review-jobs',
+		queue,
 	} as MessageBatch<ReviewJob>;
 }
 
@@ -148,5 +148,67 @@ describe('queue consumer', () => {
 		expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, false, 3, 3);
 		expect(message.ack).toHaveBeenCalledOnce();
 		expect(message.retry).not.toHaveBeenCalled();
+	});
+});
+
+/**
+ * Messages reach the dead-letter queue only when the worker died outside the
+ * normal failure path — nothing was reported to the PR, so the drain has to
+ * surface it. Without this consumer those jobs vanished silently.
+ */
+describe('dead-letter queue consumer', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('does not attempt to review a dead-lettered message', async () => {
+		const message = makeMessage();
+		await worker.queue(makeBatch([message], 'pr-review-dlq'), env);
+
+		expect(mockedHandlePREvent).not.toHaveBeenCalled();
+		expect(message.retry).not.toHaveBeenCalled();
+	});
+
+	it('logs the job loudly enough to find who it belonged to', async () => {
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		const message = makeMessage({ prNumber: 42, headSha: 'deadbeefcafe' });
+
+		await worker.queue(makeBatch([message], 'pr-review-dlq'), env);
+
+		const logged = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+		expect(logged).toContain('Dead-lettered');
+		expect(logged).toContain('test-owner/test-repo #42');
+		expect(logged).toContain('deadbee');
+	});
+
+	it('surfaces the failure on the PR, since nothing else ever reported it', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		const message = makeMessage();
+
+		await worker.queue(makeBatch([message], 'pr-review-dlq'), env);
+
+		expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, false, 1, 3);
+	});
+
+	it('acks so the dead-letter queue drains instead of accumulating forever', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		const message = makeMessage();
+
+		await worker.queue(makeBatch([message], 'pr-review-dlq'), env);
+
+		expect(message.ack).toHaveBeenCalledOnce();
+	});
+
+	it('drains the rest of the batch even if surfacing one failure throws', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		vi.mocked(surfaceFailure).mockRejectedValueOnce(new Error('github is down'));
+
+		const broken = makeMessage({ prNumber: 1 });
+		const healthy = makeMessage({ prNumber: 2 });
+
+		await expect(worker.queue(makeBatch([broken, healthy], 'pr-review-dlq'), env)).resolves.toBeUndefined();
+
+		expect(broken.ack).toHaveBeenCalledOnce();
+		expect(healthy.ack).toHaveBeenCalledOnce();
 	});
 });

@@ -8,6 +8,39 @@ import { handleSetup } from './setup';
 import { landingPage } from './setup-pages';
 import { verifySignature } from './verify';
 
+/** Queue name is declared in wrangler.jsonc — keep these in sync. */
+const DEAD_LETTER_QUEUE_NAME = 'pr-review-dlq';
+
+/** Must match wrangler.jsonc's consumer `max_retries` for pr-review-jobs. */
+const MAX_RETRIES = 2;
+
+/**
+ * Drain the dead-letter queue.
+ *
+ * Messages only land here when the worker died outside the normal failure path
+ * — a timeout, a crash, or a restart mid-review — so nothing was ever reported
+ * to the PR. Log each one loudly and surface a failure, otherwise a PR sits
+ * looking untouched with no review and no explanation.
+ */
+async function handleDeadLetter(batch: MessageBatch<ReviewJob>, env: Env): Promise<void> {
+	for (const message of batch.messages) {
+		const job = message.body;
+		const where = job ? `${job.owner}/${job.repo} #${job.prNumber} @${job.headSha.slice(0, 7)}` : '(unreadable body)';
+
+		console.error(
+			`💀 Dead-lettered review job ${where} (action=${job?.action ?? 'unknown'}, attempts=${message.attempts}) — the review never completed and was not reported.`,
+		);
+
+		if (job) {
+			await surfaceFailure(job, env, false, false, message.attempts, MAX_RETRIES + 1).catch(() => {
+				// best-effort: draining must never fail on a status-surface error
+			});
+		}
+
+		message.ack(); // nothing else can be done — drain so the queue does not accumulate
+	}
+}
+
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const setupResponse = await handleSetup(request, env);
@@ -129,7 +162,10 @@ export default {
 	},
 
 	async queue(batch: MessageBatch<ReviewJob>, env: Env): Promise<void> {
-		const MAX_RETRIES = 2; // must match wrangler.jsonc's consumer max_retries
+		if (batch.queue === DEAD_LETTER_QUEUE_NAME) {
+			await handleDeadLetter(batch, env);
+			return;
+		}
 
 		for (const message of batch.messages) {
 			try {
