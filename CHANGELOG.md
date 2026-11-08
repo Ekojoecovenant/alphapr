@@ -3,6 +3,27 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.8.0] — 2026-11-08
+
+### Added
+
+- **Self-serve dashboard, phase P0** ([ADR 0002](docs/adr/0002-self-serve-dashboard.md)). `GET /dashboard` is a read-only view of every installation you administer: account and your role on it (`admin`, or `member · read-only`), provider and model in force, whether a key is stored, the live repository list with each repo's on/off state, the last review time, and any provider failure quoted verbatim in a banner — the "Key limit exceeded" class of problem is now visible without `wrangler tail`
+- GitHub sign-in at `/auth/github` → `/auth/callback`: `read:user` scope only, the OAuth access token is used once to read the profile and installation list and is never persisted. The installation/role snapshot is stored instead, in `user_installations`
+- Server-side sessions: opaque 32-byte id in an `HttpOnly; SameSite=Lax` cookie, rows in D1 with a 30-day expiry, `last_used_at` touched at most hourly, and CSRF double-submit (reusing `hmacSign`) on sign-out. `GET /auth/github` carries a nonce-bound, 10-minute HMAC state
+- Migration `0009_users_sessions.sql` (`users`, `sessions`, `user_installations`), `0010_repos.sql` (per-repo overrides — `NULL` means inherit from the installation), and `0012_install_health.sql` (`last_error_code`, `last_error_message`, `last_error_at`, `last_review_at` on `installations`)
+- `src/setup-styles.ts` gained `DASHBOARD_STYLES` in the same token system, and the shell now knows whether the visitor is signed in (top-bar `/dashboard` link, sign-out form)
+- Tests: `test/auth.spec.ts` (13) and `test/dashboard.spec.ts` (10) over a new in-memory D1 fake (`test/helpers/fake-d1.ts`). Suite 213
+
+### Changed
+
+- The top bar of the marketing pages links `/dashboard` once signed in; sign-out lives there, not on the dashboard itself
+- Copy that claimed AlphaPR had no dashboard was rewritten (the `/setup` lede, and the landing section now titled "Three moves, then it stays out of the way")
+- README: documents the dashboard, the second OAuth callback URL (`/auth/callback`), the new migrations, and the new source files
+
+### Notes
+
+- Nothing on the dashboard is writable yet. Per-repo toggles, key replacement, review history, usage and team access are phases P1–P3 of ADR 0002
+
 ## [v1.7.0] — 2026-11-08
 
 ### Changed

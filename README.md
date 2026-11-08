@@ -90,7 +90,11 @@ At **github.com/settings/apps → New GitHub App**:
 openssl rand -hex 32
 ```
 
-- **Callback URL:** `https://<your-worker>.workers.dev/setup/callback` (needed for the self-serve setup page)
+- **Callback URLs:** two of them —
+  - `https://<your-worker>.workers.dev/setup/callback` (the self-serve setup page)
+  - `https://<your-worker>.workers.dev/auth/callback` (dashboard sign-in)
+
+  GitHub App settings accept multiple callback URLs; both point at the same Worker.
 - Webhook URL can be a placeholder for now — you'll update it after deploying.
 
 After creating the App, note the **App ID** and **Client ID**, generate a **client secret**, and generate a **private key** (`.pem` download).
@@ -159,7 +163,12 @@ pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0005_add_prov
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0006_fix_default_model.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0007_recreate_installations_default_model.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0008_add_review_usage.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0009_users_sessions.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0010_repos.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0012_install_health.sql
 ```
+
+(There is no `0011` yet — it belongs to the review-history phase of [ADR 0002](docs/adr/0002-self-serve-dashboard.md), not to a skipped file.)
 
 ### 6. Deploy and connect
 
@@ -210,6 +219,12 @@ After installing, visit `/setup` to configure per installation:
 
 Editing settings later doesn't require re-entering your key — leave the key field blank to keep it.
 
+### Dashboard
+
+Sign in at `/dashboard` with GitHub (`read:user` only — the token is used once to read your profile and installation list, then discarded). You get a read-only view of every installation you administer: which account it belongs to, your role on it (`admin` or `member · read-only`), the provider and model in force, whether a key is stored, the repository list with each repo's on/off state, the last review time, and any provider failure as a banner that quotes the error (for example `Key limit exceeded (total limit)`).
+
+Sessions are server-side rows in D1 with an opaque `HttpOnly` cookie, 30-day idle expiry, and CSRF tokens on sign-out. Nothing is written from this page yet — editing settings, replacing keys, and review history are the next phases in [ADR 0002](docs/adr/0002-self-serve-dashboard.md).
+
 ### Running tests
 
 ```bash
@@ -237,6 +252,11 @@ src/
     provider-types.ts      # single source of truth for the Provider union type
     render.ts              # findings/summary → Markdown, PR description merge
   setup.ts                 # OAuth-based self-serve configuration page
+  setup-pages.ts           # landing page, setup form, success/error pages
+  setup-styles.ts          # design tokens, page CSS, theme + scene scripts
+  auth.ts                  # dashboard sign-in: OAuth state, sessions, CSRF
+  dashboard.ts             # GET /dashboard — read-only installations + repos
+  dashboard-pages.ts       # dashboard markup
   db.ts                    # D1 queries
   crypto.ts                # AES-GCM key encryption
   errors.ts                # PermanentError classification
@@ -249,6 +269,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and 
 
 ## Roadmap
 
+- **Self-serve dashboard** — phase P0 (sign-in, sessions, read-only view of installations and repos) is in; per-repo toggles and overrides, key replacement, review history, usage, and team access follow. See [ADR 0002](docs/adr/0002-self-serve-dashboard.md).
 - **Multi-provider live verification** — the Anthropic and OpenAI adapters are selectable in `/setup` but have not been tested against live API keys; verification (and removing the "unverified" labels) is pending
 - **Self-hosted/open-weight direct adapters** — e.g. Ollama, Together AI, or other OpenAI-compatible endpoints for teams running their own open models, alongside OpenRouter/Anthropic/OpenAI
 - **Structured findings from CI context** — currently, the repo's own failing CI checks are folded in as prose context for the model's reasoning; promoting them into first-class anchored `Finding`s (with their own source attribution) is a natural next step

@@ -1,3 +1,5 @@
+import { handleAuth } from './auth';
+import { handleDashboard } from './dashboard';
 import { deleteInstallation, getReviewState, upsertInstallation } from './db';
 import { PermanentError } from './errors';
 import { createCheckRun, postReviewComment } from './github/api';
@@ -105,6 +107,13 @@ export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const setupResponse = await handleSetup(request, env);
 		if (setupResponse) return setupResponse;
+
+		// Sign-in, sign-out and the dashboard. Both return null for other paths.
+		const authResponse = await handleAuth(request, env);
+		if (authResponse) return authResponse;
+
+		const dashboardResponse = await handleDashboard(request, env);
+		if (dashboardResponse) return dashboardResponse;
 
 		if (request.method !== 'POST') {
 			const { pathname } = new URL(request.url);
