@@ -1,5 +1,7 @@
 // INTERFACES AND ENUMS
 
+import type { TokenUsage } from './types';
+
 export interface InstallationConfig {
 	installation_id: number;
 	account_login: string;
@@ -36,17 +38,20 @@ export async function saveReviewState(
 	prNumber: number,
 	sha: string,
 	reviewBody: string,
+	usage?: TokenUsage | null,
 ): Promise<void> {
 	await db
 		.prepare(
-			`INSERT INTO pr_reviews (repo_full_name, pr_number, last_reviewed_sha, last_review_body)
-      VALUES (?, ?, ?, ?)
+			`INSERT INTO pr_reviews (repo_full_name, pr_number, last_reviewed_sha, last_review_body, input_tokens, output_tokens)
+      VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(repo_full_name, pr_number)
       DO UPDATE SET last_reviewed_sha = excluded.last_reviewed_sha,
         last_review_body = excluded.last_review_body,
+        input_tokens = excluded.input_tokens,
+        output_tokens = excluded.output_tokens,
         reviewed_at = datetime('now')`,
 		)
-		.bind(repoFullName, prNumber, sha, reviewBody)
+		.bind(repoFullName, prNumber, sha, reviewBody, usage?.inputTokens ?? null, usage?.outputTokens ?? null)
 		.run();
 }
 

@@ -249,8 +249,31 @@ describe('openRouterAdapter', () => {
 
 		expect(result).toEqual({
 			ok: true,
-			data: { content: 'the review', finishReason: 'stop', rawBody: expect.any(String) },
+			data: { content: 'the review', finishReason: 'stop', rawBody: expect.any(String), usage: null },
 		});
+	});
+
+	it('normalizes prompt_tokens/completion_tokens into usage', async () => {
+		stubFetch(
+			jsonResponse({
+				choices: [{ message: { content: 'the review' }, finish_reason: 'stop' }],
+				usage: { prompt_tokens: 9000, completion_tokens: 3000 },
+			}),
+		);
+
+		const result = await openRouterAdapter.call('key-123', makeRequest());
+
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.data.usage).toEqual({ inputTokens: 9000, outputTokens: 3000 });
+	});
+
+	it('reports null usage rather than a fabricated zero when the provider omits it', async () => {
+		stubFetch(jsonResponse({ choices: [{ message: { content: 'x' }, finish_reason: 'stop' }] }));
+
+		const result = await openRouterAdapter.call('key-123', makeRequest());
+
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.data.usage).toBeNull();
 	});
 
 	it('returns null fields when the response has no choices', async () => {
@@ -353,6 +376,21 @@ describe('anthropicAdapter', () => {
 			expect(result.data.content).toBe('the review');
 			expect(result.data.finishReason).toBe('end_turn');
 		}
+	});
+
+	it('normalizes input_tokens/output_tokens into usage', async () => {
+		stubFetch(
+			jsonResponse({
+				content: [{ type: 'text', text: 'the review' }],
+				stop_reason: 'end_turn',
+				usage: { input_tokens: 11000, output_tokens: 1500 },
+			}),
+		);
+
+		const result = await anthropicAdapter.call('sk-ant-123', makeRequest());
+
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.data.usage).toEqual({ inputTokens: 11000, outputTokens: 1500 });
 	});
 
 	it('skips non-text blocks such as thinking', async () => {
@@ -476,6 +514,20 @@ describe('openAIAdapter', () => {
 			expect(result.data.content).toBe('the review');
 			expect(result.data.finishReason).toBe('stop');
 		}
+	});
+
+	it('normalizes prompt_tokens/completion_tokens into usage', async () => {
+		stubFetch(
+			jsonResponse({
+				choices: [{ message: { content: 'the review' }, finish_reason: 'stop' }],
+				usage: { prompt_tokens: 4000, completion_tokens: 500 },
+			}),
+		);
+
+		const result = await openAIAdapter.call('sk-openai-123', makeRequest());
+
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.data.usage).toEqual({ inputTokens: 4000, outputTokens: 500 });
 	});
 
 	it('returns null content when the message content is absent', async () => {

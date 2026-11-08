@@ -1,5 +1,5 @@
 import { PermanentError } from '../errors';
-import { OtherCheckRun } from '../types';
+import type { OtherCheckRun, TokenUsage } from '../types';
 import { Provider } from './provider-types';
 import { getAdapter } from './providers';
 
@@ -21,6 +21,8 @@ export interface ReviewResult {
 	findings: Finding[];
 	/** Set when the model's output couldn't be parsed as JSON — raw text fallback */
 	raw?: string;
+	/** What this review call cost in tokens, when the provider reported it. */
+	usage?: TokenUsage | null;
 }
 
 const SYSTEM_PROMPT = `You are a precise code reviewer. You receive a unified diff in which every line of the NEW version of each file is prefixed with its line number, like "42: + const x = 1;".
@@ -207,10 +209,10 @@ export async function reviewDiff(
 	}
 
 	const parsed = parseReviewJson(result.data.content);
-	if (parsed) return parsed;
+	if (parsed) return { ...parsed, usage: result.data.usage };
 
 	console.log('Review output was not valid JSON; falling back to raw text');
-	return { verdict: '', findings: [], raw: result.data.content.trim() };
+	return { verdict: '', findings: [], raw: result.data.content.trim(), usage: result.data.usage };
 }
 
 // ========== SUMMARY ============ //

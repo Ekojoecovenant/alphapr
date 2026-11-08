@@ -157,3 +157,79 @@ describe('handlePREvent — duplicate commit guard', () => {
 		await expect(handlePREvent(makeJob(), env)).rejects.toThrow(/Failed to fetch (full|compare) diff/);
 	});
 });
+
+describe('handlePREvent — token usage', () => {
+	const DIFF = `diff --git a/src/foo.ts b/src/foo.ts
+--- a/src/foo.ts
++++ b/src/foo.ts
+@@ -1,1 +1,2 @@
+ const a = 1;
++const b = 2;
+`;
+
+	/** Serve the diff for GitHub's pull request URL and a review for the LLM call. */
+	function stubHappyPath(usage: { prompt_tokens: number; completion_tokens: number } | undefined) {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (input: RequestInfo | URL) => {
+				const url = String(input);
+				if (url.includes('openrouter.ai')) {
+					return new Response(
+						JSON.stringify({
+							choices: [
+								{
+									message: { content: '{"verdict":"✅ LGTM — no issues found.","findings":[]}' },
+									finish_reason: 'stop',
+								},
+							],
+							...(usage ? { usage } : {}),
+						}),
+						{ status: 200 },
+					);
+				}
+				if (url.includes('/pulls/')) return new Response(DIFF, { status: 200 });
+				return new Response('{}', { status: 200 });
+			}),
+		);
+	}
+
+	it('persists the review call usage alongside the review state', async () => {
+		mockedGetReviewState.mockResolvedValue(null);
+		stubHappyPath({ prompt_tokens: 9000, completion_tokens: 3000 });
+
+		await handlePREvent(makeJob({ action: 'opened' }), { ...env, QUEUE_MODE: 'false' } as Env);
+
+		expect(mockedSaveReviewState).toHaveBeenCalledWith(expect.anything(), 'owner/repo', 7, HEAD_SHA, expect.any(String), {
+			inputTokens: 9000,
+			outputTokens: 3000,
+		});
+	});
+
+	it('reports the token count in the check run summary', async () => {
+		mockedGetReviewState.mockResolvedValue(null);
+		stubHappyPath({ prompt_tokens: 9000, completion_tokens: 3000 });
+
+		await handlePREvent(makeJob({ action: 'opened' }), { ...env, QUEUE_MODE: 'false' } as Env);
+
+		expect(mockedCompleteCheckRun).toHaveBeenCalledWith(
+			'installation-token',
+			'owner',
+			'repo',
+			99,
+			'success',
+			expect.any(String),
+			expect.stringContaining('12,000 tokens'),
+		);
+	});
+
+	it('omits the token count rather than claiming zero when the provider reports none', async () => {
+		mockedGetReviewState.mockResolvedValue(null);
+		stubHappyPath(undefined);
+
+		await handlePREvent(makeJob({ action: 'opened' }), { ...env, QUEUE_MODE: 'false' } as Env);
+
+		const summary = mockedCompleteCheckRun.mock.calls[0][6];
+		expect(summary).not.toContain('tokens');
+		expect(mockedSaveReviewState).toHaveBeenCalledWith(expect.anything(), 'owner/repo', 7, HEAD_SHA, expect.any(String), null);
+	});
+});

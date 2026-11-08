@@ -23,6 +23,7 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **Multi-line Apply-suggestions** — fixes that need more than one line (a guard clause, a try/finally wrap) anchor and apply correctly across the whole span
 - **Fixture-tested adapters** — each provider adapter has contract tests pinning the exact request it sends and response shape it accepts, so a wire-format break fails in CI rather than in production
 - **Costs nothing when it should not run** — draft PRs, `[skip alphapr]` titles, and a re-delivered webhook for an already-reviewed commit are all refused before the first GitHub API call
+- **Token accounting** — each review records what it cost, reported in the check run and stored per PR, so a BYOK tenant can see their spend without leaving GitHub
 - **Multi-provider foundation** — Anthropic and OpenAI provider adapters built alongside OpenRouter, sharing one architecture (not yet live-verified or exposed in setup — see Roadmap)
 - **CI-aware reviews** — when the repo's own CI has already failed on the same commit, AlphaPR factors that in as corroborating signal rather than reviewing in isolation
 - **Owner-only configuration** — only account owners and organization admins can change an installation's key or settings; repository collaborators cannot
@@ -155,6 +156,9 @@ pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0002_add_revi
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0003_add_installations.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0004_add_config.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0005_add_provider.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0006_fix_default_model.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0007_recreate_installations_default_model.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0008_add_review_usage.sql
 ```
 
 ### 6. Deploy and connect

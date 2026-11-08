@@ -16,6 +16,7 @@ import { parseDiff } from './review/diff';
 import { type Finding, generateSummary, type ReviewResult, reviewDiff, summarizeExternalChecks } from './review/llm';
 import { type Provider, parseProvider } from './review/provider-types';
 import { mergeSummaryIntoDescription, renderAnchoredComment, renderForMemory, renderSummary, sortFindings } from './review/render';
+import { formatUsage } from './review/usage';
 import { isAlreadyReviewed } from './review-gate';
 import type { CheckConclusion, ReviewCommentInput, ReviewJob } from './types';
 
@@ -318,23 +319,19 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 					? 'neutral'
 					: 'success';
 		const title = displayResult.raw ? 'Review posted' : displayResult.verdict;
+		const tokenCost = formatUsage(result.usage);
+		const checkSummary = [`${anchoredCount} inline comment${anchoredCount === 1 ? '' : 's'}, ${unanchored.length} in summary.`, tokenCost]
+			.filter(Boolean)
+			.join(' ');
 		try {
-			await completeCheckRun(
-				token,
-				job.owner,
-				job.repo,
-				job.checkRunId,
-				conclusion,
-				title,
-				`${anchoredCount} inline comment${anchoredCount === 1 ? '' : 's'}, ${unanchored.length} in summary.`,
-			);
+			await completeCheckRun(token, job.owner, job.repo, job.checkRunId, conclusion, title, checkSummary);
 		} catch (err) {
 			console.error(`Failed to complete check run: ${err instanceof Error ? err.message : err}`);
 		}
 	}
 
 	try {
-		await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, renderForMemory(result));
+		await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, renderForMemory(result), result.usage);
 	} catch (err) {
 		console.error(`Failed to save review state (comments already posted): ${err instanceof Error ? err.message : err}`);
 	}

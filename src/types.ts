@@ -15,6 +15,18 @@ export interface ReviewJob {
 
 export type CheckConclusion = 'success' | 'neutral' | 'action_required' | 'failure';
 
+/**
+ * Token counts for a single model call, normalized across providers.
+ *
+ * Either side may be null: providers report usage differently (chat-completions
+ * says `prompt_tokens`/`completion_tokens`, Anthropic says
+ * `input_tokens`/`output_tokens`) and may omit it entirely.
+ */
+export interface TokenUsage {
+	inputTokens: number | null;
+	outputTokens: number | null;
+}
+
 export interface ReviewCommentInput {
 	path: string;
 	line: number;

@@ -1,3 +1,4 @@
+import type { TokenUsage } from '../types';
 import { Provider } from './provider-types';
 
 export interface ChatRequest {
@@ -12,6 +13,32 @@ export interface ChatResponse {
 	content: string | null;
 	finishReason: string | null;
 	rawBody: string;
+	/** Null when the provider omitted usage — never invented. */
+	usage: TokenUsage | null;
+}
+
+/** Read `prompt_tokens`/`completion_tokens` (OpenRouter and OpenAI share this shape). */
+function usageFromChatCompletions(data: { usage?: { prompt_tokens?: number; completion_tokens?: number } }): TokenUsage | null {
+	const usage = data.usage;
+	if (!usage) return null;
+
+	const inputTokens = typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : null;
+	const outputTokens = typeof usage.completion_tokens === 'number' ? usage.completion_tokens : null;
+	if (inputTokens === null && outputTokens === null) return null;
+
+	return { inputTokens, outputTokens };
+}
+
+/** Read `input_tokens`/`output_tokens` (Anthropic's naming). */
+function usageFromAnthropic(data: { usage?: { input_tokens?: number; output_tokens?: number } }): TokenUsage | null {
+	const usage = data.usage;
+	if (!usage) return null;
+
+	const inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : null;
+	const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : null;
+	if (inputTokens === null && outputTokens === null) return null;
+
+	return { inputTokens, outputTokens };
 }
 
 export type ChatResult = { ok: true; data: ChatResponse } | { ok: false; status: number; body: string };
@@ -87,6 +114,7 @@ export const openRouterAdapter: ProviderAdapter = {
 
 		const data = JSON.parse(rawBody) as {
 			choices?: { message?: { content?: string }; finish_reason?: string }[];
+			usage?: { prompt_tokens?: number; completion_tokens?: number };
 		};
 		return {
 			ok: true,
@@ -94,6 +122,7 @@ export const openRouterAdapter: ProviderAdapter = {
 				content: data.choices?.[0]?.message?.content ?? null,
 				finishReason: data.choices?.[0]?.finish_reason ?? null,
 				rawBody,
+				usage: usageFromChatCompletions(data),
 			},
 		};
 	},
@@ -140,6 +169,7 @@ export const anthropicAdapter: ProviderAdapter = {
 		const data = JSON.parse(rawBody) as {
 			content?: { type: string; text?: string }[];
 			stop_reason?: string;
+			usage?: { input_tokens?: number; output_tokens?: number };
 		};
 		const textBlock = data.content?.find((b) => b.type === 'text');
 		return {
@@ -148,6 +178,7 @@ export const anthropicAdapter: ProviderAdapter = {
 				content: textBlock?.text ?? null,
 				finishReason: data.stop_reason ?? null,
 				rawBody,
+				usage: usageFromAnthropic(data),
 			},
 		};
 	},
@@ -196,6 +227,7 @@ export const openAIAdapter: ProviderAdapter = {
 
 		const data = JSON.parse(rawBody) as {
 			choices?: { message?: { content?: string }; finish_reason?: string }[];
+			usage?: { prompt_tokens?: number; completion_tokens?: number };
 		};
 		return {
 			ok: true,
@@ -203,6 +235,7 @@ export const openAIAdapter: ProviderAdapter = {
 				content: data.choices?.[0]?.message?.content ?? null,
 				finishReason: data.choices?.[0]?.finish_reason ?? null,
 				rawBody,
+				usage: usageFromChatCompletions(data),
 			},
 		};
 	},
