@@ -3,6 +3,19 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.7.0] — 2026-11-08
+
+### Changed
+
+- The `/setup` pages are now the "Split Signal" design: paper-and-ink typography (Space Grotesk + DM Mono), hairline rules, one teal brand colour, and orange reserved for a single action. All colours are custom properties; the whole dark theme is the `data-theme` attribute on `<html>`, with a toggle in the top bar that persists the choice and is resolved before first paint so the page never flashes the wrong theme
+- The landing page gained a sample review — a real line-anchored finding on `src/auth/session.ts` L42–L47 with a suggestion block and a working (labelled) Apply demo — plus the three-step flow and the three check-run states, including a failure card that quotes the provider error
+- Extracted the styles into `src/setup-styles.ts`. The worker still serves plain HTML strings with no build step; the three.js hero scene stays a runtime CDN load with a static SVG fallback, never a bundled dependency
+- Setup form: same field names, order and hints (so `src/setup.ts` is untouched), now two-column with per-field help, labels bound to their controls, and a real focus ring
+
+### Added
+
+- Design archive under `docs/design/` — the four concepts explored, with `00-index.html` comparing them and `04-split.html` being the shipped one
+- `test/setup-pages.spec.ts` grew to 18 tests: provider-select exhaustiveness, the full save-path field set, escaping, label/id pairing, both theme token blocks, the pre-paint theme script, and that the Apply demo button is not a form submit
 ## [v1.6.0] — 2026-11-08
 
 ### Added

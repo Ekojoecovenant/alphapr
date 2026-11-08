@@ -1,0 +1,1252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>AlphaPR — Concept 02: Paper &amp; Ink</title>
+<meta name="description" content="Paper &amp; Ink — an editorial design concept for AlphaPR, a BYOK AI pull-request reviewer.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@1,9..144,300..600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ==========================================================================
+   00 · tokens
+   ========================================================================== */
+:root{
+  --paper:#ffffff;
+  --paper-2:#f7f6f3;
+  --paper-3:#efeee9;
+  --ink:#0a0a0a;
+  --ink-2:#3b3b3b;
+  --ink-3:#6b6962;
+  --ink-mute:#6b6964;          /* 5.1:1 on paper-2 — small mono labels */
+  --line:#e4e1da;
+  --line-strong:#c8c4ba;
+  --accent:#ff5c00;
+  --accent-ink:#c2410c;
+  --accent-soft:#fff1e8;
+  --teal:#0f766e;
+  --teal-soft:#e6f5f3;
+  --danger:#b42318;
+  --font-sans:"Space Grotesk",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"DM Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --font-serif:"Fraunces",Georgia,"Times New Roman",serif;
+  --shell:1200px;
+  --pad:clamp(20px,4.8vw,56px);
+  --section:clamp(72px,8.6vw,120px);
+  --ease:cubic-bezier(.22,1,.36,1);
+}
+
+/* ==========================================================================
+   01 · base
+   ========================================================================== */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{
+  margin:0;
+  padding-top:40px;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--font-sans);
+  font-size:16px;
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+::selection{background:var(--accent);color:#fff}
+h1,h2,h3,p,figure,blockquote{margin:0}
+a{color:inherit}
+code{font-family:var(--font-mono);font-size:.94em}
+:focus-visible{outline:2px solid var(--accent-ink);outline-offset:3px;border-radius:1px}
+.shell{max-width:var(--shell);margin:0 auto;padding-inline:var(--pad)}
+.label{
+  font-family:var(--font-mono);
+  font-size:10.5px;
+  font-weight:400;
+  line-height:1.4;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--ink-mute);
+}
+.skip-link{
+  position:fixed;top:6px;left:6px;z-index:300;
+  transform:translateY(-200%);
+  background:var(--ink);color:var(--paper);
+  padding:10px 14px;text-decoration:none;
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+}
+.skip-link:focus{transform:translateY(0)}
+
+/* ==========================================================================
+   02 · fixed top bar
+   ========================================================================== */
+.topbar{
+  position:fixed;inset:0 0 auto 0;height:40px;z-index:100;
+  background:rgba(255,255,255,.9);
+  -webkit-backdrop-filter:blur(10px) saturate(1.1);
+  backdrop-filter:blur(10px) saturate(1.1);
+  border-bottom:1px solid var(--line);
+}
+.bar-inner{
+  max-width:var(--shell);height:100%;margin:0 auto;padding-inline:var(--pad);
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+}
+.bar-brand{
+  display:flex;align-items:baseline;gap:6px;
+  min-width:0;white-space:nowrap;overflow:hidden;
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink);text-decoration:none;
+}
+.brand-name{font-family:var(--font-sans);font-weight:600;letter-spacing:.18em}
+.brand-dot{color:var(--accent)}
+.brand-sub{color:var(--ink-mute)}
+.concepts{
+  display:flex;align-items:center;gap:5px;flex:none;
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+}
+.concepts a{
+  position:relative;display:inline-flex;align-items:baseline;gap:3px;
+  color:var(--ink-mute);text-decoration:none;padding:4px 2px;
+  transition:color .2s var(--ease);
+}
+.concepts a:hover{color:var(--ink)}
+.concepts a[aria-current="page"]{color:var(--ink)}
+.concepts a[aria-current="page"]::before{
+  content:"";align-self:center;width:4px;height:4px;border-radius:50%;
+  background:var(--accent);margin-right:2px;
+}
+.concepts a[aria-current="page"]::after{
+  content:"";position:absolute;left:2px;right:2px;bottom:-2px;height:2px;background:var(--accent);
+}
+.concepts .sep{color:var(--line-strong);font-size:10px}
+
+/* ==========================================================================
+   03 · hero
+   ========================================================================== */
+.hero{padding:clamp(44px,6vw,82px) 0 0}
+.hero-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);
+  gap:clamp(32px,5vw,72px);
+  align-items:start;
+}
+.hero-meta{display:flex;align-items:center;gap:14px;margin-bottom:clamp(26px,3.6vw,40px)}
+.wordmark{
+  font-family:var(--font-sans);font-weight:600;font-size:14px;
+  letter-spacing:.28em;color:var(--ink);white-space:nowrap;
+}
+.meta-rule{flex:1;height:1px;background:var(--line)}
+.hero-meta .label{white-space:nowrap;font-size:10px}
+.hero-title{
+  font-size:clamp(2.6rem,7.2vw,4.9rem);
+  font-weight:500;line-height:.98;letter-spacing:-.04em;
+  text-wrap:balance;margin:0 0 26px;
+}
+.hero-title em{
+  font-family:var(--font-serif);font-style:italic;font-weight:400;
+  color:var(--accent);letter-spacing:-.015em;
+  font-size:1.02em;
+}
+.hero-sub{
+  max-width:47ch;margin:0 0 30px;
+  font-size:clamp(16px,1.35vw,17.5px);line-height:1.64;color:var(--ink-2);
+  text-wrap:pretty;
+}
+.hero-actions{display:flex;align-items:center;flex-wrap:wrap;gap:22px}
+.btn{
+  display:inline-flex;align-items:center;gap:10px;
+  height:46px;padding:0 20px;border-radius:2px;
+  border:1px solid var(--ink);background:var(--ink);color:var(--paper);
+  font-family:var(--font-sans);font-size:14px;font-weight:500;letter-spacing:.01em;
+  text-decoration:none;cursor:pointer;
+  transition:background .25s var(--ease),border-color .25s var(--ease),color .25s var(--ease);
+}
+.btn svg{flex:none;transition:transform .25s var(--ease)}
+.btn:hover{background:var(--accent-ink);border-color:var(--accent-ink);color:#fff}
+.btn:hover svg{transform:translate(2px,-2px)}
+.link-arrow{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:14px;color:var(--ink);text-decoration:none;
+  border-bottom:1px solid var(--line-strong);padding-bottom:3px;
+  transition:color .2s var(--ease),border-color .2s var(--ease);
+}
+.link-arrow svg{transition:transform .2s var(--ease)}
+.link-arrow:hover{color:var(--accent-ink);border-color:var(--accent)}
+.link-arrow:hover svg{transform:translateY(2px)}
+.hero-proof{
+  display:flex;flex-wrap:wrap;list-style:none;
+  margin:38px 0 0;padding:16px 0 0;border-top:1px solid var(--line);
+}
+.hero-proof li{
+  display:flex;align-items:baseline;gap:8px;
+  padding:0 20px;border-left:1px solid var(--line);
+  font-size:13px;color:var(--ink-2);
+}
+.hero-proof li:first-child{padding-left:0;border-left:0}
+.proof-k{font-family:var(--font-mono);font-size:9.5px;color:var(--ink-3);letter-spacing:.06em}
+
+/* ---------- ribbon panel ---------- */
+.hero-visual{position:relative;min-width:0;margin-top:clamp(0px,2vw,16px)}
+.hero-visual::before{
+  content:"";position:absolute;inset:16px -16px -16px 16px;background:var(--paper-3);z-index:0;
+}
+.ribbon{position:relative;z-index:1;border:1px solid var(--line-strong);background:var(--paper)}
+.ribbon-top{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:11px 15px;border-bottom:1px solid var(--line);background:var(--paper);
+}
+.ribbon-top .label{font-size:9.5px}
+.ribbon-stage{
+  position:relative;height:clamp(300px,34vw,430px);
+  background-color:var(--paper-2);
+  background-image:radial-gradient(rgba(10,10,10,.14) 1px,transparent 1px);
+  background-size:22px 22px;
+  background-position:11px 11px;
+}
+#ribbon-canvas{
+  display:block;width:100%;height:100%;
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 9%,#000 91%,transparent 100%);
+  mask-image:linear-gradient(to bottom,transparent 0,#000 9%,#000 91%,transparent 100%);
+}
+.ribbon figcaption{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:9px 15px;border-top:1px solid var(--line);
+}
+.ribbon figcaption .label{font-size:10px}
+.visual-note{
+  position:relative;z-index:2;
+  padding-left:16px;
+  display:flex;align-items:baseline;gap:10px;margin:22px 0 0;
+  font-size:12.5px;line-height:1.5;color:var(--ink-3);max-width:40ch;
+}
+.visual-note .label{flex:none;color:var(--ink-mute)}
+
+/* ==========================================================================
+   04 · ticker
+   ========================================================================== */
+.ticker{
+  margin-top:clamp(48px,6vw,76px);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  display:flex;align-items:stretch;background:var(--paper);
+}
+.ticker-label{
+  display:flex;align-items:center;gap:8px;flex:none;
+  padding:0 16px;border-right:1px solid var(--line);
+  background:var(--paper);z-index:2;white-space:nowrap;font-size:9.5px;
+}
+.ticker-viewport{
+  position:relative;flex:1;min-width:0;overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 5%,#000 95%,transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0,#000 5%,#000 95%,transparent 100%);
+}
+.ticker-track{display:flex;width:max-content;animation:marquee 46s linear infinite}
+.ticker:hover .ticker-track{animation-play-state:paused}
+.ticker-set{display:flex;align-items:center;gap:26px;padding-right:26px;height:44px}
+.ticker-path{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);white-space:nowrap}
+.ticker-sep{color:var(--line-strong);font-size:10px}
+
+/* ==========================================================================
+   05 · sections
+   ========================================================================== */
+.section{padding:var(--section) 0;border-top:1px solid var(--line);scroll-margin-top:56px}
+.sec-head{max-width:740px;margin-bottom:clamp(36px,4.8vw,58px)}
+.sec-label{display:flex;align-items:baseline;gap:10px}
+.sec-num{color:var(--ink);font-size:10.5px}
+.sec-title{
+  font-size:clamp(1.9rem,3.5vw,2.85rem);
+  font-weight:500;line-height:1.04;letter-spacing:-.035em;
+  text-wrap:balance;margin:14px 0 18px;
+}
+.lede{font-size:16.5px;line-height:1.66;color:var(--ink-2);max-width:56ch;text-wrap:pretty}
+.lede code{font-size:12.5px;background:var(--paper-3);padding:2px 5px;color:var(--ink)}
+
+/* ---------- sample review ---------- */
+.review-grid{
+  display:grid;grid-template-columns:minmax(0,.78fr) minmax(0,1.22fr);
+  gap:clamp(32px,5vw,72px);align-items:start;
+}
+.section-intro{min-width:0}
+.section-intro .sec-title{max-width:16ch}
+.facts{list-style:none;margin:34px 0 0;padding:0;border-top:1px solid var(--line-strong)}
+.facts li{
+  display:grid;grid-template-columns:82px minmax(0,1fr);gap:14px;
+  padding:11px 0;border-bottom:1px solid var(--line);
+  font-size:13px;line-height:1.5;color:var(--ink-2);
+}
+.facts .label{font-size:9.5px;padding-top:2px}
+.report{
+  min-width:0;border:1px solid var(--line-strong);border-left:2px solid var(--accent);
+  background:var(--paper);
+}
+.report-head{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
+  flex-wrap:wrap;padding:13px 20px;border-bottom:1px solid var(--line);
+  background:var(--paper-2);
+}
+.path-block{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-width:0}
+.report-path{font-family:var(--font-mono);font-size:13px;font-weight:400;letter-spacing:-.01em}
+.range{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;color:var(--ink-mute)}
+.severity{
+  flex:none;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;padding:4px 8px;
+  border:1px solid var(--line-strong);background:var(--paper-3);color:var(--ink);
+  white-space:nowrap;
+}
+.finding{padding:20px 22px 18px;font-size:16.5px;line-height:1.6;color:var(--ink);max-width:62ch}
+.diff{
+  margin:0 22px 20px;border:1px solid var(--line);background:var(--paper);
+  overflow-x:auto;-webkit-overflow-scrolling:touch;
+}
+.diff-row{
+  display:grid;grid-template-columns:44px 20px minmax(0,1fr);
+  align-items:center;min-width:440px;line-height:1.5;
+}
+.diff-row + .diff-row{border-top:1px solid rgba(228,225,218,.75)}
+.diff-row .ln{
+  padding:7px 9px 7px 0;text-align:right;
+  font-family:var(--font-mono);font-size:10px;color:var(--ink-3);
+}
+.diff-row .sign{font-family:var(--font-mono);font-size:12px;text-align:center;color:var(--ink-3)}
+.diff-row code{padding:7px 14px 7px 0;white-space:pre;font-size:12.5px;color:var(--ink-2)}
+.diff-row.rem{background:var(--paper-3)}
+.diff-row.rem code{color:var(--ink-3)}
+.diff-row.add{background:var(--paper-3)}
+.diff-row.add code{color:var(--ink)}
+.diff-row.add .sign,.diff-row.add .ln{color:var(--teal)}
+.report-foot{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  flex-wrap:wrap;padding:14px 20px 16px;border-top:1px solid var(--line);
+}
+.author{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink-2);flex-wrap:wrap}
+.author strong{font-weight:500}
+.avatar{
+  display:grid;place-items:center;width:23px;height:23px;flex:none;
+  border:1px solid var(--line-strong);background:var(--paper-3);
+  font-family:var(--font-mono);font-size:10px;letter-spacing:.02em;color:var(--ink-2);
+}
+.author-sep{color:var(--line-strong)}
+.author-note{color:var(--ink-mute)}
+.apply-wrap{display:flex;align-items:center;gap:12px;margin-left:auto}
+.demo-note{font-size:10px;color:var(--ink-3)}
+.apply{
+  display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 11px;
+  border:1px solid rgba(255,92,0,.5);border-radius:2px;background:var(--paper);
+  color:var(--accent-ink);font-family:var(--font-sans);font-size:12px;font-weight:500;
+  cursor:pointer;transition:background .2s var(--ease),color .2s var(--ease),border-color .2s var(--ease);
+}
+.apply:hover{background:var(--accent-ink);border-color:var(--accent-ink);color:#fff}
+
+/* ---------- steps ---------- */
+.steps{list-style:none;margin:0;padding:0;border-top:1px solid var(--line-strong)}
+.step{
+  display:grid;grid-template-columns:78px minmax(0,198px) minmax(0,1fr) 88px;
+  gap:clamp(16px,3vw,34px);align-items:start;
+  padding:26px 0;border-bottom:1px solid var(--line);
+}
+.step-num{font-family:var(--font-mono);font-size:12px;letter-spacing:.06em;color:var(--ink-3);padding-top:5px}
+.step h3{font-size:clamp(1.25rem,2vw,1.5rem);font-weight:500;letter-spacing:-.025em;line-height:1.2;padding-top:1px}
+.step p{font-size:15.5px;line-height:1.64;color:var(--ink-2);max-width:58ch}
+.step p code{font-size:11.5px;background:var(--paper-3);padding:2px 4px}
+.step-meta{
+  font-family:var(--font-mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-mute);text-align:right;padding-top:6px;
+}
+
+/* ---------- setup ---------- */
+.setup-grid{
+  display:grid;grid-template-columns:minmax(0,.82fr) minmax(0,1.18fr);
+  gap:clamp(32px,5vw,72px);align-items:start;
+}
+.aside-note{
+  display:block;margin-top:30px;padding-top:14px;border-top:1px solid var(--line);
+  font-size:9.5px;color:var(--ink-mute);max-width:34ch;
+}
+.setup-panel{
+  position:relative;min-width:0;
+  border:1px solid var(--line-strong);background:var(--paper-2);
+}
+.setup-panel::before{
+  content:"";position:absolute;inset:6px;border:1px solid rgba(200,196,186,.45);
+  pointer-events:none;
+}
+.panel-head{
+  position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:13px 20px;border-bottom:1px solid var(--line-strong);
+}
+.panel-head .label{font-size:10px}
+.setup-body{
+  position:relative;display:grid;grid-template-columns:1fr 1fr;gap:17px 20px;
+  padding:22px 20px 20px;
+}
+.field{display:flex;flex-direction:column;gap:7px;min-width:0}
+.field--wide{grid-column:1/-1}
+.field label{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-mute)}
+.field input,.field select{
+  width:100%;height:40px;padding:0 12px;border-radius:1px;
+  border:1px solid var(--line-strong);background:var(--paper);color:var(--ink);
+  font-family:var(--font-mono);font-size:12.5px;letter-spacing:-.01em;
+  transition:border-color .18s var(--ease);
+}
+.field input::placeholder{color:var(--ink-3);opacity:1}
+.field input:hover,.field select:hover{border-color:var(--ink-3)}
+.field input:focus-visible,.field select:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px;border-color:var(--ink-2)}
+.field select{
+  appearance:none;-webkit-appearance:none;padding-right:34px;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%236b6964' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 13px center;
+}
+.field-hint{font-size:11.5px;line-height:1.45;color:var(--ink-mute);max-width:48ch}
+.form-foot{
+  grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;
+  gap:14px;flex-wrap:wrap;margin-top:5px;padding-top:17px;border-top:1px solid var(--line-strong);
+}
+.btn-submit{height:40px;font-size:13px;padding:0 16px}
+.btn-submit svg{display:none}
+.form-status{font-family:var(--font-mono);font-size:10px;letter-spacing:.03em;color:var(--ink-mute);max-width:32ch}
+
+/* ---------- states ---------- */
+.state-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line-strong)}
+.state{
+  display:grid;grid-template-columns:168px minmax(0,1fr) 138px;
+  gap:clamp(16px,3vw,32px);align-items:start;
+  padding:24px 0;border-bottom:1px solid var(--line);
+}
+.state--failed{
+  border-left:2px solid var(--accent);
+  border-bottom-color:var(--line-strong);
+  background:var(--paper-2);
+  padding-left:clamp(14px,2vw,22px);
+  padding-right:clamp(0px,1.5vw,16px);
+}
+.state-rail{display:flex;align-items:center;gap:9px;padding-top:2px}
+.state-rail .label{font-size:9.5px}
+.dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--ink-3)}
+.dot--live{background:var(--accent);animation:livepulse 1.8s ease-out infinite}
+.dot--done{background:var(--teal)}
+.dot--fail{background:var(--danger)}
+.state-title{font-size:16px;line-height:1.5;letter-spacing:-.01em;color:var(--ink);max-width:62ch}
+.state-title strong{font-weight:600}
+.state-title--fail{font-size:14.5px;line-height:1.6}
+.attempt{font-family:var(--font-mono);font-size:11px;color:var(--ink-mute);white-space:nowrap}
+.state-sub{margin-top:6px;font-size:13px;line-height:1.55;color:var(--ink-2);max-width:62ch}
+.provider-error{
+  margin:13px 0 0;padding:11px 14px;
+  border-left:2px solid var(--accent);background:var(--paper-3);
+  font-family:var(--font-mono);font-size:11.5px;line-height:1.6;color:var(--ink-2);
+  overflow-wrap:anywhere;
+}
+.provider-error code{font-size:inherit;background:none;padding:0}
+.state-meta{
+  font-family:var(--font-mono);font-size:9.5px;line-height:1.7;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-mute);text-align:right;padding-top:3px;
+}
+
+/* ==========================================================================
+   06 · footer + design notes
+   ========================================================================== */
+.site-footer{
+  border-top:1px solid var(--line-strong);background:var(--paper-2);
+  padding:clamp(44px,5.5vw,68px) 0 clamp(30px,4vw,44px);
+}
+.footer-top{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:22px;
+  flex-wrap:wrap;padding-bottom:22px;border-bottom:1px solid var(--line);
+}
+.footer-mark{font-size:14px;font-weight:700;letter-spacing:.26em}
+.footer-nav{
+  display:flex;align-items:center;gap:11px;flex-wrap:wrap;
+  font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+}
+.footer-nav a{color:var(--ink-2);text-decoration:none;border-bottom:1px solid transparent;transition:color .2s var(--ease),border-color .2s var(--ease)}
+.footer-nav a:hover{color:var(--accent-ink);border-bottom-color:var(--accent)}
+.footer-nav .sep{color:var(--line-strong)}
+.colophon{margin:22px 0 0;font-size:13.5px;line-height:1.62;color:var(--ink-2);max-width:70ch}
+.concept-line{margin:14px 0 0;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mute)}
+.design-notes{margin-top:clamp(34px,4vw,46px);border-top:1px solid var(--line-strong)}
+.design-notes summary{
+  display:flex;align-items:center;gap:12px;
+  padding:15px 0;cursor:pointer;list-style:none;
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink);
+}
+.design-notes summary::-webkit-details-marker{display:none}
+.design-notes summary .plus{
+  display:inline-grid;place-items:center;width:16px;height:16px;flex:none;
+  border:1px solid var(--line-strong);background:var(--paper);
+  font-size:13px;line-height:1;color:var(--ink-2);
+  transition:transform .2s var(--ease),border-color .2s var(--ease);
+}
+.design-notes[open] summary .plus{transform:rotate(45deg);border-color:var(--accent-ink);color:var(--accent-ink)}
+.summary-hint{margin-left:auto;color:var(--ink-mute);font-size:9.5px}
+.notes-list{list-style:none;margin:6px 0 0;padding:0;border-top:1px solid var(--line)}
+.notes-list li{
+  display:grid;grid-template-columns:42px minmax(0,1fr);gap:14px;
+  padding:13px 0;border-bottom:1px solid var(--line);
+}
+.notes-n{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;color:var(--ink-3);padding-top:3px}
+.notes-list p{font-size:13.5px;line-height:1.62;color:var(--ink-2);max-width:88ch}
+.notes-list p code{font-size:11.5px;background:var(--paper-3);padding:1px 4px}
+.signature{
+  margin:18px 0 0;font-family:var(--font-mono);font-size:10px;letter-spacing:.04em;
+  line-height:1.6;color:var(--ink);border-left:2px solid var(--accent);padding-left:12px;
+}
+
+/* ==========================================================================
+   07 · motion
+   ========================================================================== */
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes marquee{from{transform:translate3d(0,0,0)}to{transform:translate3d(-50%,0,0)}}
+@keyframes livepulse{
+  0%{box-shadow:0 0 0 0 rgba(255,92,0,.4)}
+  70%{box-shadow:0 0 0 6px rgba(255,92,0,0)}
+  100%{box-shadow:0 0 0 0 rgba(255,92,0,0)}
+}
+.rise{animation:rise .9s var(--ease) both}
+.hero-meta.rise{animation-delay:.05s}
+.hero-title.rise{animation-delay:.12s}
+.hero-sub.rise{animation-delay:.2s}
+.hero-actions.rise{animation-delay:.28s}
+.hero-proof.rise{animation-delay:.34s}
+.hero-visual.rise{animation-delay:.22s}
+.reveal[data-armed="true"]{
+  opacity:0;transform:translateY(18px);
+  transition:opacity .8s var(--ease),transform .8s var(--ease);
+  transition-delay:var(--reveal-delay,0ms);
+}
+.reveal[data-armed="true"][data-visible="true"]{opacity:1;transform:none}
+
+/* ==========================================================================
+   08 · responsive
+   ========================================================================== */
+@media (max-width:1080px){
+  .hero-title{font-size:clamp(2.4rem,6.2vw,4.1rem)}
+  .review-grid,.setup-grid{grid-template-columns:minmax(0,1fr);gap:clamp(32px,5vw,48px)}
+  .section-intro{max-width:680px}
+  .section-intro .sec-title{max-width:22ch}
+  .report{max-width:820px}
+  .step{grid-template-columns:64px minmax(0,170px) minmax(0,1fr) 78px}
+  .state{grid-template-columns:150px minmax(0,1fr) 120px}
+}
+@media (max-width:900px){
+  .hero-grid{grid-template-columns:minmax(0,1fr)}
+  .hero-sub{max-width:56ch}
+  .hero-visual{max-width:560px;margin-top:14px}
+  .hero-visual::before{inset:12px -12px -12px 12px}
+}
+@media (max-width:760px){
+  .concepts .word{
+    position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+    overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;
+  }
+  .concepts{gap:2px}
+  .concepts a{padding:4px 3px}
+  .concepts .sep{opacity:.6}
+  .hero-proof{flex-direction:column;margin-top:30px}
+  .hero-proof li{padding:8px 0;border-left:0;border-top:1px solid var(--line)}
+  .hero-proof li:first-child{padding-top:0;border-top:0}
+  .step{grid-template-columns:46px minmax(0,1fr);gap:10px 16px;padding:22px 0}
+  .step-num{grid-row:span 3;padding-top:4px}
+  .step h3,.step p,.step-meta{grid-column:2}
+  .step-meta{text-align:left;padding-top:2px}
+  .state{grid-template-columns:minmax(0,1fr);gap:10px;padding:22px 0}
+  .state-meta{text-align:left;padding-top:0}
+  .state--failed{padding-left:16px;padding-right:12px}
+  .ticker-label{font-size:10px;padding:0 12px;letter-spacing:.08em}
+  .ticker-set{height:40px}
+  .notes-list li{grid-template-columns:34px minmax(0,1fr);gap:10px}
+}
+@media (max-width:560px){
+  body{font-size:15px}
+  .hero-actions{align-items:stretch;flex-direction:column;gap:16px}
+  .hero-actions .btn{justify-content:center}
+  .link-arrow{align-self:flex-start}
+  .setup-body{grid-template-columns:1fr;gap:15px}
+  .field--wide,.form-foot{grid-column:1}
+  .form-foot{align-items:flex-start;flex-direction:column;gap:10px}
+  .report-head{padding:12px 16px}
+  .finding{padding:18px 16px 16px;font-size:15.5px}
+  .diff{margin:0 16px 16px}
+  .report-foot{padding:13px 16px 15px}
+  .apply-wrap{width:100%;margin-left:0;justify-content:space-between}
+  .footer-nav{gap:8px}
+  .summary-hint{display:none}
+  .design-notes summary{justify-content:flex-start}
+  .ticker-label{display:none}
+  .visual-note{font-size:12px}
+  .provider-error{font-size:11px}
+}
+@media (max-width:400px){
+  .brand-sub,.brand-dot{display:none}
+  .concepts{font-size:10px}
+  .hero-meta{gap:10px}
+  .hero-meta .label{font-size:10px;letter-spacing:.08em}
+  .wordmark{font-size:13px;letter-spacing:.22em}
+}
+
+/* ==========================================================================
+   09 · reduced motion — static final state, no loops
+   ========================================================================== */
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{
+    animation-duration:.001ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:.001ms!important;
+  }
+  .reveal[data-armed="true"]{opacity:1!important;transform:none!important}
+  .ticker-track{animation:none!important;transform:none!important}
+  .ticker-viewport{padding-left:14px;-webkit-mask-image:none;mask-image:none}
+  .dot--live{animation:none!important}
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="bar-inner">
+    <a class="bar-brand" href="00-index.html">
+      <span class="brand-name">AlphaPR</span>
+      <span class="brand-dot" aria-hidden="true">·</span>
+      <span class="brand-sub">design concepts</span>
+    </a>
+    <nav class="concepts" aria-label="Design concepts">
+      <a href="00-index.html"><span class="num">00</span><span class="word">index</span></a>
+      <span class="sep" aria-hidden="true">·</span>
+      <a href="01-precision.html"><span class="num">01</span><span class="word">precision</span></a>
+      <span class="sep" aria-hidden="true">·</span>
+      <a href="02-paper.html" aria-current="page"><span class="num">02</span><span class="word">paper</span></a>
+      <span class="sep" aria-hidden="true">·</span>
+      <a href="03-field.html"><span class="num">03</span><span class="word">field</span></a>
+      <span class="sep" aria-hidden="true">·</span>
+      <a href="04-split.html"><span class="num">04</span><span class="word">split</span></a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <!-- ==================================================================== -->
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="shell hero-grid">
+      <div class="hero-copy">
+        <div class="hero-meta rise">
+          <span class="wordmark">ALPHAPR</span>
+          <span class="meta-rule" aria-hidden="true"></span>
+          <span class="label">BYOK review · Cloudflare Worker</span>
+        </div>
+        <h1 class="hero-title rise" id="hero-title">Every comment sits on the line it’s <em>about</em>.</h1>
+        <p class="hero-sub rise">A pull-request reviewer that runs on your own provider key. It reads the diff, checks every line number before it comments, and remembers the commit it already reviewed — so a re-push only asks about what changed.</p>
+        <div class="hero-actions rise">
+          <a class="btn" href="https://github.com/apps/alphapr-ai">Install the GitHub App
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+          </a>
+          <a class="link-arrow" href="#sample">See a sample review
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v14M6 12l6 6 6-6"/></svg>
+          </a>
+        </div>
+        <ul class="hero-proof rise">
+          <li><span class="proof-k">01</span>Line-anchored</li>
+          <li><span class="proof-k">02</span>Incremental</li>
+          <li><span class="proof-k">03</span>Your key, your model</li>
+        </ul>
+      </div>
+
+      <aside class="hero-visual rise" aria-label="Diff ribbon illustration">
+        <figure class="ribbon">
+          <div class="ribbon-top">
+            <span class="label">Diff ribbon</span>
+            <span class="label">L42–L47</span>
+          </div>
+          <div class="ribbon-stage">
+            <canvas id="ribbon-canvas" role="img" aria-label="An animated column of diff lines: teal additions, orange removals and faint context lines, with one highlight travelling down the gutter."></canvas>
+          </div>
+          <figcaption>
+            <span class="label">18 lines · 6 hunk dividers</span>
+            <span class="label">Canvas · 2D</span>
+          </figcaption>
+        </figure>
+        <p class="visual-note"><span class="label">Note</span> The ribbon is ornament. The comment below is the product.</p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ==================================================================== -->
+  <div class="ticker" aria-hidden="true">
+    <span class="ticker-label label">Reviewed paths</span>
+    <div class="ticker-viewport">
+      <div class="ticker-track">
+        <div class="ticker-set">
+          <span class="ticker-path">src/auth/session.ts</span><span class="ticker-sep">·</span>
+          <span class="ticker-path">workers/queue.ts</span><span class="ticker-sep">·</span>
+          <span class="ticker-path">db/migrations/0008_add_review_usage.sql</span><span class="ticker-sep">·</span>
+          <span class="ticker-path">test/review-gate.spec.ts</span><span class="ticker-sep">·</span>
+          <span class="ticker-path">src/providers/openrouter.ts</span><span class="ticker-sep">·</span>
+          <span class="ticker-path">.github/workflows/deploy.yml</span><span class="ticker-sep">·</span>
+          <span class="ticker-path">src/setup-pages.ts</span><span class="ticker-sep">·</span>
+        </div>
+        <div class="ticker-set">
+          <span class="ticker-path">src/auth/session.ts</span><span class="ticker-sep">·</span>
+          <span class="ticker-path">workers/queue.ts</span><span class="ticker-sep">·</span>
+          <span class="ticker-path">db/migrations/0008_add_review_usage.sql</span><span class="ticker-sep">·</span>
+          <span class="ticker-path">test/review-gate.spec.ts</span><span class="ticker-sep">·</span>
+          <span class="ticker-path">src/providers/openrouter.ts</span><span class="ticker-sep">·</span>
+          <span class="ticker-path">.github/workflows/deploy.yml</span><span class="ticker-sep">·</span>
+          <span class="ticker-path">src/setup-pages.ts</span><span class="ticker-sep">·</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <section class="section" id="sample" aria-labelledby="sample-title">
+    <div class="shell review-grid">
+      <div class="section-intro reveal">
+        <p class="label sec-label"><span class="sec-num">01</span> The sample review</p>
+        <h2 class="sec-title" id="sample-title">A finding you can read once, then commit.</h2>
+        <p class="lede">One comment, one range, one fix. The text names the bug, explains the consequence, and offers the smallest change that resolves it — no severity theatre, no restating the diff.</p>
+        <ul class="facts">
+          <li><span class="label">Range</span><span>L42–L47, validated against the file before posting</span></li>
+          <li><span class="label">Suggestion</span><span>Commits in one click, straight from the review</span></li>
+          <li><span class="label">Memory</span><span>An identical SHA is skipped: “Already reviewed”</span></li>
+        </ul>
+      </div>
+
+      <article class="report reveal" aria-labelledby="report-path">
+        <header class="report-head">
+          <div class="path-block">
+            <code class="report-path" id="report-path">src/auth/session.ts</code>
+            <span class="range">L42–L47</span>
+          </div>
+          <span class="severity">major · correctness</span>
+        </header>
+
+        <div class="report-body">
+          <p class="finding">TTL is captured once at module load, so changing SESSION_TTL never takes effect until a cold start. Read it inside refreshSession(), or document that it needs a redeploy.</p>
+
+          <div class="diff" role="group" aria-label="Suggested change on lines 42 to 47">
+            <div class="diff-row rem">
+              <span class="ln">42</span><span class="sign" aria-hidden="true">-</span>
+              <code>const TTL = Number(env.SESSION_TTL);</code>
+            </div>
+            <div class="diff-row add">
+              <span class="ln">43</span><span class="sign" aria-hidden="true">+</span>
+              <code>const TTL = Number(env.SESSION_TTL ?? "3600");</code>
+            </div>
+            <div class="diff-row ctx">
+              <span class="ln">44</span><span class="sign" aria-hidden="true"></span>
+              <code>const encoder = new TextEncoder();</code>
+            </div>
+            <div class="diff-row ctx">
+              <span class="ln">45</span><span class="sign" aria-hidden="true"></span>
+              <code>export async function refreshSession(cookie: string) {</code>
+            </div>
+            <div class="diff-row ctx">
+              <span class="ln">46</span><span class="sign" aria-hidden="true"></span>
+              <code>  const session = await readSession(cookie);</code>
+            </div>
+            <div class="diff-row ctx">
+              <span class="ln">47</span><span class="sign" aria-hidden="true"></span>
+              <code>  const next = await issueSession(session, TTL);</code>
+            </div>
+          </div>
+        </div>
+
+        <footer class="report-foot">
+          <div class="author">
+            <span class="avatar" aria-hidden="true">AP</span>
+            <strong>AlphaPR · bot</strong>
+            <span class="author-sep" aria-hidden="true">·</span>
+            <span class="author-note">commented on this range</span>
+          </div>
+          <div class="apply-wrap">
+            <span class="label demo-note">Demo only</span>
+            <button class="apply" type="button">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5L19 7"/></svg>
+              Apply suggestion
+            </button>
+          </div>
+        </footer>
+      </article>
+    </div>
+  </section>
+
+  <!-- ==================================================================== -->
+  <section class="section" id="how" aria-labelledby="how-title">
+    <div class="shell">
+      <div class="sec-head reveal">
+        <p class="label sec-label"><span class="sec-num">02</span> How it works</p>
+        <h2 class="sec-title" id="how-title">Three moves, and the loop closes.</h2>
+        <p class="lede">No new dashboard and no new place to look. The whole loop lives inside the pull request you were already reading.</p>
+      </div>
+
+      <ol class="steps">
+        <li class="step reveal">
+          <span class="step-num">01</span>
+          <h3>Connect</h3>
+          <p>Install the app at <code>github.com/apps/alphapr-ai</code>, then open <code>/setup</code> and paste a provider key. OpenRouter is verified in production; Anthropic and OpenAI are implemented and contract-tested, not yet live-verified.</p>
+          <span class="step-meta">One-time</span>
+        </li>
+        <li class="step reveal">
+          <span class="step-num">02</span>
+          <h3>Review</h3>
+          <p>AlphaPR reads the diff, validates every line number against the files it was given, then comments inline — with a suggestion block whenever the fix fits in a few lines.</p>
+          <span class="step-meta">Per push</span>
+        </li>
+        <li class="step reveal">
+          <span class="step-num">03</span>
+          <h3>Remember</h3>
+          <p>The last reviewed commit is stored per pull request. A re-push reviews only new commits; an identical SHA is skipped as “Already reviewed”. Drafts wait, and <code>[skip alphapr]</code> in the title opts out.</p>
+          <span class="step-meta">Per PR</span>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ==================================================================== -->
+  <section class="section" id="setup" aria-labelledby="setup-title">
+    <div class="shell setup-grid">
+      <div class="section-intro reveal">
+        <p class="label sec-label"><span class="sec-num">03</span> The setup panel</p>
+        <h2 class="sec-title" id="setup-title">Bring a key. Keep your rules.</h2>
+        <p class="lede">The real page is a server-rendered template string — no SPA, no client store. The panel below is a copy of it; the fields are the ones you will actually fill in.</p>
+        <span class="aside-note">BYOK · the key is used only for your own review calls.</span>
+      </div>
+
+      <form class="setup-panel reveal" id="setup-form" novalidate>
+        <div class="panel-head">
+          <span class="label">/setup</span>
+          <span class="label">Static mock</span>
+        </div>
+        <div class="setup-body">
+          <div class="field">
+            <label for="installation">Installation</label>
+            <select id="installation" name="installation">
+              <option selected>Ekojoecovenant · alphapr</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="provider">Provider</label>
+            <select id="provider" name="provider">
+              <option selected>OpenRouter</option>
+              <option>Anthropic (unverified)</option>
+              <option>OpenAI (unverified)</option>
+            </select>
+          </div>
+
+          <div class="field field--wide">
+            <label for="api-key">API key</label>
+            <input id="api-key" name="api_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Leave blank to keep your existing key">
+            <span class="field-hint">Stored as a Worker secret. Blank keeps the key already on this installation.</span>
+          </div>
+
+          <div class="field field--wide">
+            <label for="model">Model</label>
+            <input id="model" name="model" type="text" spellcheck="false" value="deepseek/deepseek-v4-flash-0731">
+          </div>
+
+          <div class="field">
+            <label for="severity">Severity threshold</label>
+            <select id="severity" name="severity">
+              <option>All</option>
+              <option selected>Minor and above</option>
+              <option>Major only</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="tone">Tone</label>
+            <select id="tone" name="tone">
+              <option>Thorough</option>
+              <option selected>Concise</option>
+            </select>
+          </div>
+
+          <div class="field field--wide">
+            <label for="ignore-paths">Ignore paths</label>
+            <input id="ignore-paths" name="ignore_paths" type="text" spellcheck="false" placeholder="dist/,*.lock,*.min.js">
+            <span class="field-hint">Comma-separated. <code>dir/</code> prefixes and <code>*.ext</code> suffixes both work.</span>
+          </div>
+
+          <div class="form-foot">
+            <button class="btn btn-submit" type="submit">Save configuration</button>
+            <span class="form-status" id="form-status" role="status">Static mock — nothing is saved.</span>
+          </div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ==================================================================== -->
+  <section class="section" id="states" aria-labelledby="states-title">
+    <div class="shell">
+      <div class="sec-head reveal">
+        <p class="label sec-label"><span class="sec-num">04</span> States</p>
+        <h2 class="sec-title" id="states-title">All three endings, stated plainly.</h2>
+        <p class="lede">A review can be running, finished, or refused by a provider. The third case quotes the provider verbatim instead of hiding it.</p>
+      </div>
+
+      <ul class="state-list">
+        <li class="state state--running reveal">
+          <div class="state-rail"><span class="dot dot--live" aria-hidden="true"></span><span class="label">In progress</span></div>
+          <div class="state-body">
+            <p class="state-title">Reviewing…</p>
+            <p class="state-sub">Reading 3 files and validating line numbers before it comments.</p>
+          </div>
+          <p class="state-meta">PR #482<br>Queued 0:04</p>
+        </li>
+
+        <li class="state state--done reveal">
+          <div class="state-rail"><span class="dot dot--done" aria-hidden="true"></span><span class="label">Success</span></div>
+          <div class="state-body">
+            <p class="state-title">Reviewed 3 files · 2 findings · 12,431 tokens</p>
+            <p class="state-sub">Check run posted against commit 9f2c1ab. The next push reviews only what is new.</p>
+          </div>
+          <p class="state-meta">Check<br>Passed</p>
+        </li>
+
+        <li class="state state--failed reveal">
+          <div class="state-rail"><span class="dot dot--fail" aria-hidden="true"></span><span class="label">Failure</span></div>
+          <div class="state-body">
+            <p class="state-title state-title--fail">⚠️ <strong>AlphaPR review failed.</strong> This won't be retried — check your installation's configuration. <span class="attempt">(attempt 1/3)</span></p>
+            <blockquote class="provider-error"><code>openrouter auth error: 403 Key limit exceeded (total limit). $0.80 of $0.80 used; does not reset.</code></blockquote>
+            <p class="state-sub">The provider's message is quoted as-is — not summarised, not swallowed.</p>
+          </div>
+          <p class="state-meta">Not retried</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<!-- ====================================================================== -->
+<footer class="site-footer">
+  <div class="shell">
+    <div class="footer-top">
+      <p class="footer-mark">ALPHAPR</p>
+      <nav class="footer-nav" aria-label="AlphaPR product links">
+        <a href="https://github.com/apps/alphapr-ai">Install</a>
+        <span class="sep" aria-hidden="true">·</span>
+        <a href="https://github.com/Ekojoecovenant/alphapr#readme">Docs</a>
+        <span class="sep" aria-hidden="true">·</span>
+        <a href="https://github.com/Ekojoecovenant/alphapr">Source on GitHub</a>
+      </nav>
+    </div>
+
+    <p class="colophon">A BYOK AI PR reviewer that comments on the exact lines it's talking about — and remembers what it already said.</p>
+    <p class="concept-line">Static design concept · not wired to the worker</p>
+
+    <details class="design-notes" open>
+      <summary>
+        <span class="plus" aria-hidden="true">+</span>
+        <span>Design notes</span>
+        <span class="summary-hint">02 — Paper &amp; Ink</span>
+      </summary>
+      <ul class="notes-list">
+        <li>
+          <span class="notes-n">01</span>
+          <p><strong>Palette.</strong> Paper and ink carry the page; orange appears at most once per viewport — the italic word, the Apply affordance, a failure rule — so it reads as a mark, not a brand wash. Teal is reserved for added lines and the verified provider.</p>
+        </li>
+        <li>
+          <span class="notes-n">02</span>
+          <p><strong>Motion budget.</strong> One 2D canvas (18 bars, only while on screen), a 46s marquee, a 5s gutter pulse, and 18px reveal rises. Everything pauses offscreen or hidden; reduced motion draws one static canvas frame and disables the marquee and pulse.</p>
+        </li>
+        <li>
+          <span class="notes-n">03</span>
+          <p><strong>Cost to run.</strong> No libraries and no images: about 8KB of hand-written JS plus three Google Font families. After fonts, the whole concept is a single request.</p>
+        </li>
+        <li>
+          <span class="notes-n">04</span>
+          <p><strong>Cheap to port.</strong> The markup maps 1:1 onto <code>src/setup-pages.ts</code> template strings — no components, no state, classes and one canvas. The setup panel is already the shape of the real form.</p>
+        </li>
+        <li>
+          <span class="notes-n">05</span>
+          <p><strong>Expensive to port.</strong> The type ramp and asymmetric grid need real content; without Fraunces italic and mono labels it collapses into a blog. The canvas needs a static fallback if inline script is ever blocked by CSP.</p>
+        </li>
+        <li>
+          <span class="notes-n">06</span>
+          <p><strong>Accessibility.</strong> Reveals are visible by default and armed only when observed, focus rings are 2px at 3px offset, mono is never the only label, and every state is stated in text as well as colour.</p>
+        </li>
+        <li>
+          <span class="notes-n">07</span>
+          <p><strong>Honest weakness.</strong> Editorial whitespace is expensive: on a 14-inch laptop the sample review starts below the fold, and warm paper can read as “portfolio” to someone who wanted a dashboard. The 10.5px mono labels sit close to the legibility floor.</p>
+        </li>
+      </ul>
+      <p class="signature">Concept 02 — Paper &amp; Ink. Static mockup, not wired to the worker.</p>
+    </details>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var reduceQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  /* ------------------------------------------------------------------
+     Reveals: visible by default. Arm only elements that start below
+     the fold, so a page without JS still shows everything.
+     ------------------------------------------------------------------ */
+  var revealEls = Array.prototype.slice.call(document.querySelectorAll(".reveal"));
+  var revealObserver = null;
+
+  function disarmReveals() {
+    revealEls.forEach(function (el) {
+      el.removeAttribute("data-armed");
+      el.removeAttribute("data-visible");
+      el.style.removeProperty("--reveal-delay");
+    });
+    if (revealObserver) {
+      revealObserver.disconnect();
+      revealObserver = null;
+    }
+  }
+
+  function armReveals() {
+    if (!("IntersectionObserver" in window) || revealObserver) return;
+    revealObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.setAttribute("data-visible", "true");
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.05 });
+
+    revealEls.forEach(function (el, i) {
+      var rect = el.getBoundingClientRect();
+      if (rect.top > window.innerHeight * 0.94) {
+        el.style.setProperty("--reveal-delay", (i % 3) * 70 + "ms");
+        el.setAttribute("data-armed", "true");
+        revealObserver.observe(el);
+      }
+    });
+  }
+
+  function syncReveals() {
+    if (reduceQuery.matches) {
+      disarmReveals();
+      return;
+    }
+    armReveals();
+  }
+
+  syncReveals();
+
+  /* ------------------------------------------------------------------
+     Diff ribbon: 2D canvas, no libraries.
+     ------------------------------------------------------------------ */
+  var canvas = document.getElementById("ribbon-canvas");
+
+  if (canvas && canvas.getContext) {
+    var ctx = canvas.getContext("2d");
+    var stage = canvas.parentNode;
+    var W = 0, H = 0, DPR = 1;
+    var clock = 1.6;
+    var LINE_H = 34;
+    var ROWS = 18;
+    var rafId = 0;
+    var running = false;
+    var onScreen = true;
+    var lastTs = 0;
+    var COLORS = {
+      add: "rgba(15,118,110,0.55)",
+      del: "rgba(255,92,0,0.45)",
+      ctx: "rgba(10,10,10,0.10)"
+    };
+
+    function hash(n) {
+      var x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+      return x - Math.floor(x);
+    }
+
+    var rows = [];
+    for (var i = 0; i < ROWS; i++) {
+      var r = hash(i + 2.7);
+      rows.push({
+        kind: r < 0.3 ? "add" : r < 0.52 ? "del" : "ctx",
+        width: 0.38 + hash(i * 7.3 + 1.1) * 0.56,
+        indent: Math.floor(hash(i * 3.1 + 5.4) * 3) * 12,
+        num: 42 + i
+      });
+    }
+
+    function roundRect(x, y, w, h, radius) {
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(x, y, w, h, radius);
+        return;
+      }
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + w - radius, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+      ctx.lineTo(x + w, y + h - radius);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+      ctx.lineTo(x + radius, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+    }
+
+    function draw(t) {
+      if (!W || !H) return;
+      var gutter = W < 340 ? 34 : 42;
+      var barLeft = gutter + (W < 340 ? 10 : 14);
+      var codeW = Math.max(60, W - barLeft - 24);
+      var p = (t * 9) % LINE_H;
+      var base = Math.floor((t * 9) / LINE_H);
+      var count = Math.ceil(H / LINE_H) + 2;
+
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+
+      for (var k = -1; k <= count; k++) {
+        var y = k * LINE_H - p;
+        var idx = (((k + base) % ROWS) + ROWS) % ROWS;
+        var row = rows[idx];
+
+        if (idx % 6 === 5) {
+          ctx.save();
+          ctx.strokeStyle = "rgba(10,10,10,0.13)";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 5]);
+          ctx.beginPath();
+          ctx.moveTo(16, y + 3.5);
+          ctx.lineTo(W - 16, y + 3.5);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        ctx.font = '400 9px "DM Mono", ui-monospace, monospace';
+        ctx.fillStyle = "rgba(10,10,10,0.34)";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(row.num), gutter - 9, y + LINE_H / 2 + 1);
+
+        var bw = Math.max(26, codeW * row.width);
+        var bx = barLeft + row.indent;
+        if (bx + bw > barLeft + codeW) bw = barLeft + codeW - bx;
+        ctx.fillStyle = COLORS[row.kind];
+        roundRect(bx, y + (LINE_H - 7) / 2, bw, 7, 3.5);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = "rgba(10,10,10,0.08)";
+      ctx.fillRect(gutter, 0, 1, H);
+
+      var cycle = (t % 5) / 5;
+      if (cycle < 0.55) {
+        var ph = cycle / 0.55;
+        var eased = ph < 0.5 ? 2 * ph * ph : 1 - Math.pow(-2 * ph + 2, 2) / 2;
+        var hy = -50 + eased * (H + 100);
+        var g = ctx.createLinearGradient(0, hy - 26, 0, hy + 26);
+        g.addColorStop(0, "rgba(255,92,0,0)");
+        g.addColorStop(0.45, "rgba(255,92,0,0.16)");
+        g.addColorStop(1, "rgba(255,92,0,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(6, hy - 26, gutter - 4, 52);
+        ctx.fillStyle = "rgba(255,92,0,0.9)";
+        ctx.fillRect(gutter - 3, hy - 16, 2, 32);
+      }
+    }
+
+    function measure() {
+      var rect = stage.getBoundingClientRect();
+      W = Math.max(1, rect.width);
+      H = Math.max(1, rect.height);
+      DPR = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(W * DPR);
+      canvas.height = Math.round(H * DPR);
+      draw(clock);
+    }
+
+    function frame(ts) {
+      if (!running) return;
+      if (!lastTs) lastTs = ts;
+      var dt = Math.min(0.05, (ts - lastTs) / 1000);
+      lastTs = ts;
+      clock += dt;
+      draw(clock);
+      rafId = window.requestAnimationFrame(frame);
+    }
+
+    function start() {
+      if (running || reduceQuery.matches || !onScreen || document.hidden) return;
+      running = true;
+      lastTs = 0;
+      rafId = window.requestAnimationFrame(frame);
+    }
+
+    function stop() {
+      running = false;
+      if (rafId) window.cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
+
+    function syncMotion() {
+      stop();
+      if (reduceQuery.matches) {
+        draw(clock);
+        return;
+      }
+      start();
+    }
+
+    measure();
+    syncMotion();
+
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(function () { measure(); }).observe(stage);
+    } else {
+      window.addEventListener("resize", measure);
+    }
+
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(function (entries) {
+        onScreen = entries[0].isIntersecting;
+        if (onScreen) start(); else stop();
+      }, { threshold: 0 }).observe(stage);
+    }
+
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) {
+        stop();
+      } else if (onScreen) {
+        start();
+      }
+    });
+
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function () {
+        if (!running) draw(clock);
+      });
+    }
+
+    if (reduceQuery.addEventListener) {
+      reduceQuery.addEventListener("change", syncMotion);
+    } else if (reduceQuery.addListener) {
+      reduceQuery.addListener(syncMotion);
+    }
+  }
+
+  if (reduceQuery.addEventListener) {
+    reduceQuery.addEventListener("change", syncReveals);
+  } else if (reduceQuery.addListener) {
+    reduceQuery.addListener(syncReveals);
+  }
+
+  /* ------------------------------------------------------------------
+     Setup panel: a real form element, deliberately inert.
+     ------------------------------------------------------------------ */
+  var form = document.getElementById("setup-form");
+  if (form) {
+    var status = document.getElementById("form-status");
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      if (status) status.textContent = "Static mock — nothing was saved.";
+    });
+  }
+})();
+</script>
+</body>
+</html>
