@@ -21,6 +21,8 @@ Bring your own OpenRouter key, pick any model, install the GitHub App on your re
 - **PR description summaries** — a concise, auto-generated overview appended to the PR description, kept current across pushes without touching what you wrote
 - **Tested** — the diff parser, JSON extraction, and OAuth signing logic have automated test coverage, including regression tests against real production incidents, enforced by CI on every PR
 - **Multi-line Apply-suggestions** — fixes that need more than one line (a guard clause, a try/finally wrap) anchor and apply correctly across the whole span
+- **Fixture-tested adapters** — each provider adapter has contract tests pinning the exact request it sends and response shape it accepts, so a wire-format break fails in CI rather than in production
+- **Costs nothing when it should not run** — draft PRs, `[skip alphapr]` titles, and a re-delivered webhook for an already-reviewed commit are all refused before the first GitHub API call
 - **Multi-provider foundation** — Anthropic and OpenAI provider adapters built alongside OpenRouter, sharing one architecture (not yet live-verified or exposed in setup — see Roadmap)
 - **CI-aware reviews** — when the repo's own CI has already failed on the same commit, AlphaPR factors that in as corroborating signal rather than reviewing in isolation
 - **Owner-only configuration** — only account owners and organization admins can change an installation's key or settings; repository collaborators cannot

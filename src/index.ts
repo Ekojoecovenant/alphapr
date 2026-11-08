@@ -1,11 +1,11 @@
-import { deleteInstallation, upsertInstallation } from './db';
+import { deleteInstallation, getReviewState, upsertInstallation } from './db';
 import { PermanentError } from './errors';
 import { createCheckRun, postReviewComment } from './github/api';
 import { createAppJWT, getInstallationToken } from './github/auth';
+import { decideReview, isReviewAction } from './review-gate';
 import { handlePREvent, type ReviewJob, surfaceFailure } from './review-handler';
 import { handleSetup } from './setup';
 import { landingPage } from './setup-pages';
-import { shouldSkipReview } from './skip-review';
 import { verifySignature } from './verify';
 
 export default {
@@ -47,9 +47,28 @@ export default {
 			return new Response('ok', { status: 200 });
 		}
 
-		if (event === 'pull_request' && (payload.action === 'opened' || payload.action === 'synchronize')) {
-			if (shouldSkipReview(payload.pull_request.title)) {
-				console.log(`⏭️ Skipping review for PR #${payload.number} — title contains "[skip alphapr]"`);
+		if (event === 'pull_request' && isReviewAction(payload.action)) {
+			const pullRequest = payload.pull_request;
+
+			// Best-effort dedupe lookup: a database hiccup must never suppress a
+			// review, so a failure here falls through to reviewing as normal.
+			let lastReviewedSha: string | null = null;
+			try {
+				const prior = await getReviewState(env.DB, payload.repository.full_name, payload.number);
+				lastReviewedSha = prior?.last_reviewed_sha ?? null;
+			} catch (err) {
+				console.error(`Could not read review state for dedupe (reviewing anyway): ${err instanceof Error ? err.message : err}`);
+			}
+
+			const decision = decideReview({
+				draft: pullRequest.draft,
+				title: pullRequest.title,
+				headSha: pullRequest.head.sha,
+				lastReviewedSha,
+			});
+
+			if (!decision.run) {
+				console.log(`⏭️ Skipping review for PR #${payload.number} (${decision.reason})`);
 				return new Response('ok', { status: 200 });
 			}
 
@@ -57,7 +76,7 @@ export default {
 			const owner = payload.repository.owner.login;
 			const repo = payload.repository.name;
 			const prNumber = payload.number;
-			const headSha = payload.pull_request.head.sha;
+			const headSha = pullRequest.head.sha;
 
 			let statusCommentId: number | null = null;
 			let checkRunId: number | null = null;

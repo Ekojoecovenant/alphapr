@@ -1,3 +1,6 @@
+/** Pull-request actions that trigger (or re-trigger) a review. */
+export type ReviewAction = 'opened' | 'synchronize' | 'ready_for_review';
+
 export interface ReviewJob {
 	installationId: number;
 	owner: string;
@@ -5,7 +8,7 @@ export interface ReviewJob {
 	repoFullName: string;
 	prNumber: number;
 	headSha: string;
-	action: 'opened' | 'synchronize';
+	action: ReviewAction;
 	statusCommentId: number | null;
 	checkRunId: number | null;
 }
