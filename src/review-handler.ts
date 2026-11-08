@@ -54,13 +54,15 @@ export async function surfaceFailure(
 
 	const attemptSuffix = attempt && maxAttempts ? ` (attempt ${attempt}/${maxAttempts})` : '';
 	const reason = detail ? sanitizeDetail(detail) : '';
+	// The quote comes last, on its own paragraph: an attempt counter swallowed into
+	// the blockquote reads as though the provider wrote it.
 	const explanation = reason ? `\n\n> ${reason}` : '';
 
 	const commentText = isPermanent
-		? `⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration.${explanation}${attemptSuffix}`
+		? `⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration.${attemptSuffix}${explanation}`
 		: willRetry
 			? `⚠️ **AlphaPR review failed.** Retrying automatically…${attemptSuffix}`
-			: `⚠️ **AlphaPR review failed.** All retry attempts exhausted.${explanation}${attemptSuffix}`;
+			: `⚠️ **AlphaPR review failed.** All retry attempts exhausted.${attemptSuffix}${explanation}`;
 
 	if (job.statusCommentId !== null) {
 		try {

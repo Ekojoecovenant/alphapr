@@ -289,6 +289,14 @@ describe('surfaceFailure', () => {
 		expect(text).not.toContain('>');
 	});
 
+	it('places the attempt counter outside the quote, so it is not read as provider text', async () => {
+		await surfaceFailure(makeJob(), env, true, false, 1, 3, 'openrouter auth error: 403 Key limit exceeded');
+
+		const [, , , , text] = mockedEditComment.mock.calls[0];
+		expect(text).toContain('configuration. (attempt 1/3)\n\n> openrouter auth error');
+		expect(text).not.toContain('Key limit exceeded (attempt 1/3)');
+	});
+
 	it('does not quote a detail while a retry is still pending', async () => {
 		await surfaceFailure(makeJob(), env, false, true, 1, 3, 'temporary blip');
 
