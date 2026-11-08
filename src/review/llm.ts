@@ -174,7 +174,6 @@ export async function reviewDiff(
 		role: 'user',
 		content: `Review this pull request diff:\n\n${annotatedDiff}`,
 	});
-	// ... rest unchanged
 
 	const toneInstruction =
 		config.reviewTone === 'concise'
