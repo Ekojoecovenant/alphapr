@@ -15,6 +15,12 @@ const DEAD_LETTER_QUEUE_NAME = 'pr-review-dlq';
 const MAX_RETRIES = 2;
 
 /**
+ * Dead-lettered jobs carry no error text (the worker that failed is gone), so
+ * the surfaced reason has to be stated rather than quoted.
+ */
+const DEAD_LETTER_DETAIL = 'The review did not finish — the worker was interrupted or timed out. Re-run it by pushing a new commit.';
+
+/**
  * Drain the dead-letter queue.
  *
  * Messages only land here when the worker died outside the normal failure path
@@ -32,7 +38,7 @@ async function handleDeadLetter(batch: MessageBatch<ReviewJob>, env: Env): Promi
 		);
 
 		if (job) {
-			await surfaceFailure(job, env, false, false, message.attempts, MAX_RETRIES + 1).catch(() => {
+			await surfaceFailure(job, env, false, false, message.attempts, MAX_RETRIES + 1, DEAD_LETTER_DETAIL).catch(() => {
 				// best-effort: draining must never fail on a status-surface error
 			});
 		}
@@ -148,7 +154,15 @@ export default {
 				ctx.waitUntil(
 					handlePREvent(job, env).catch(async (err) => {
 						console.error(`Free-tier review failed (no retry): ${err instanceof Error ? err.message : err}`);
-						await surfaceFailure(job, env, err instanceof PermanentError, false, 1, 1).catch(() => {
+						await surfaceFailure(
+							job,
+							env,
+							err instanceof PermanentError,
+							false,
+							1,
+							1,
+							err instanceof Error ? err.message : String(err),
+						).catch(() => {
 							// best-effort: a failure here must never crash the free-tier dispatch path
 						});
 					}),
@@ -185,7 +199,15 @@ export default {
 				}
 
 				const willRetry = !isPermanent && !isFinalAttempt;
-				await surfaceFailure(message.body, env, isPermanent, willRetry, message.attempts, MAX_RETRIES + 1).catch(() => {
+				await surfaceFailure(
+					message.body,
+					env,
+					isPermanent,
+					willRetry,
+					message.attempts,
+					MAX_RETRIES + 1,
+					err instanceof Error ? err.message : String(err),
+				).catch(() => {
 					// best-effort: a failure here must never crash the free-tier dispatch path
 				});
 

@@ -22,6 +22,22 @@ import type { CheckConclusion, ReviewCommentInput, ReviewJob } from './types';
 
 export type { ReviewJob };
 
+/**
+ * Reduce an upstream error message to one safe, quotable line for a public PR
+ * comment. A provider 4xx body is often the only explanation a tenant gets
+ * (e.g. "Key limit exceeded"), so it is worth surfacing — but it must never
+ * carry a credential, contain markup, or run away with the comment.
+ */
+export function sanitizeDetail(detail: string): string {
+	const collapsed = detail
+		.replace(/\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}/g, '[redacted]')
+		.replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [redacted]')
+		.replace(/\s+/g, ' ')
+		.replace(/[<>]/g, '')
+		.trim();
+	return collapsed.length > 300 ? `${collapsed.slice(0, 300)}…` : collapsed;
+}
+
 export async function surfaceFailure(
 	job: ReviewJob,
 	env: Env,
@@ -29,6 +45,7 @@ export async function surfaceFailure(
 	willRetry: boolean,
 	attempt?: number,
 	maxAttempts?: number,
+	detail?: string,
 ): Promise<void> {
 	if (job.statusCommentId === null && job.checkRunId === null) return;
 
@@ -36,12 +53,14 @@ export async function surfaceFailure(
 	const token = await getInstallationToken(jwt, job.installationId);
 
 	const attemptSuffix = attempt && maxAttempts ? ` (attempt ${attempt}/${maxAttempts})` : '';
+	const reason = detail ? sanitizeDetail(detail) : '';
+	const explanation = reason ? `\n\n> ${reason}` : '';
 
 	const commentText = isPermanent
-		? `⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration.${attemptSuffix}`
+		? `⚠️ **AlphaPR review failed.** This won't be retried — check your installation's configuration.${explanation}${attemptSuffix}`
 		: willRetry
 			? `⚠️ **AlphaPR review failed.** Retrying automatically…${attemptSuffix}`
-			: `⚠️ **AlphaPR review failed.** All retry attempts exhausted.${attemptSuffix}`;
+			: `⚠️ **AlphaPR review failed.** All retry attempts exhausted.${explanation}${attemptSuffix}`;
 
 	if (job.statusCommentId !== null) {
 		try {

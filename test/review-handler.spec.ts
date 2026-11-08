@@ -28,7 +28,7 @@ vi.mock('../src/github/api', () => ({
 
 import { getInstallation, getReviewState, saveReviewState } from '../src/db';
 import { completeCheckRun, editComment, getFailedCheckRuns } from '../src/github/api';
-import { handlePREvent } from '../src/review-handler';
+import { handlePREvent, sanitizeDetail, surfaceFailure } from '../src/review-handler';
 import type { ReviewJob } from '../src/types';
 
 const HEAD_SHA = 'abc123def4567890';
@@ -231,5 +231,84 @@ describe('handlePREvent — token usage', () => {
 		const summary = mockedCompleteCheckRun.mock.calls[0][6];
 		expect(summary).not.toContain('tokens');
 		expect(mockedSaveReviewState).toHaveBeenCalledWith(expect.anything(), 'owner/repo', 7, HEAD_SHA, expect.any(String), null);
+	});
+});
+
+describe('sanitizeDetail', () => {
+	it('collapses multi-line provider bodies into one quotable line', () => {
+		expect(sanitizeDetail('  rate\n\tlimited  ')).toBe('rate limited');
+	});
+
+	it('redacts credentials that a provider might echo back', () => {
+		const out = sanitizeDetail('bad key sk-or-v1-0123456789abcdef failed; sent Bearer abc.def-123');
+		expect(out).not.toContain('sk-or-v1-0123456789abcdef');
+		expect(out).not.toContain('abc.def-123');
+		expect(out).toContain('[redacted]');
+	});
+
+	it('strips angle brackets so the comment cannot gain raw HTML', () => {
+		expect(sanitizeDetail('<img src=x>see <b>this</b>')).toBe('img src=xsee bthis/b');
+	});
+
+	it('truncates long details with an ellipsis', () => {
+		const out = sanitizeDetail('x'.repeat(500));
+		expect(out).toHaveLength(301);
+		expect(out.endsWith('…')).toBe(true);
+	});
+});
+
+describe('surfaceFailure', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('quotes the provider reason on a permanent failure', async () => {
+		await surfaceFailure(makeJob(), env, true, false, 1, 3, 'openrouter auth error: 403 Key limit exceeded');
+
+		const [, , , , text] = mockedEditComment.mock.calls[0];
+		expect(text).toContain("This won't be retried");
+		expect(text).toContain('> openrouter auth error: 403 Key limit exceeded');
+	});
+
+	it('surfaces the real OpenRouter key-limit body instead of a generic hint', async () => {
+		const body =
+			'openrouter auth error: 403 {"error":{"message":"Key limit exceeded (total limit). Manage it using https://openrouter.ai/workspaces/default/keys/a6b5f67a $0.80 of $0.80 used; does not reset.","code":403}}';
+
+		await surfaceFailure(makeJob(), env, true, false, 1, 3, body);
+
+		const [, , , , text] = mockedEditComment.mock.calls[0];
+		expect(text).toContain('Key limit exceeded');
+		expect(text).toContain('$0.80 of $0.80 used');
+	});
+
+	it('keeps the configuration hint when no detail is available', async () => {
+		await surfaceFailure(makeJob(), env, true, false, 1, 3);
+
+		const [, , , , text] = mockedEditComment.mock.calls[0];
+		expect(text).toContain("check your installation's configuration");
+		expect(text).not.toContain('>');
+	});
+
+	it('does not quote a detail while a retry is still pending', async () => {
+		await surfaceFailure(makeJob(), env, false, true, 1, 3, 'temporary blip');
+
+		const [, , , , text] = mockedEditComment.mock.calls[0];
+		expect(text).toContain('Retrying automatically');
+		expect(text).not.toContain('temporary blip');
+	});
+
+	it('quotes the detail once retries are exhausted', async () => {
+		await surfaceFailure(makeJob(), env, false, false, 3, 3, 'temporary blip');
+
+		const [, , , , text] = mockedEditComment.mock.calls[0];
+		expect(text).toContain('All retry attempts exhausted');
+		expect(text).toContain('> temporary blip');
+	});
+
+	it('never throws when the status comment cannot be edited', async () => {
+		mockedEditComment.mockRejectedValueOnce(new Error('403 forbidden'));
+
+		await expect(surfaceFailure(makeJob(), env, true, false, 1, 3, 'boom')).resolves.toBeUndefined();
+		expect(mockedCompleteCheckRun).toHaveBeenCalled();
 	});
 });

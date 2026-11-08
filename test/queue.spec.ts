@@ -99,7 +99,7 @@ describe('queue consumer', () => {
 
 		await worker.queue(batch, env);
 
-		expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, true, 1, 3);
+		expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, true, 1, 3, 'temporary');
 	});
 
 	it('calls surfaceFailure with willRetry=false for a PermanentError', async () => {
@@ -109,7 +109,7 @@ describe('queue consumer', () => {
 
 		await worker.queue(batch, env);
 
-		expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, true, false, 1, 3);
+		expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, true, false, 1, 3, 'permanent');
 	});
 
 	it('processes multiple messages in a batch independently', async () => {
@@ -145,7 +145,7 @@ describe('queue consumer', () => {
 
 		await worker.queue(batch, env);
 
-		expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, false, 3, 3);
+		expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, false, 3, 3, 'still failing');
 		expect(message.ack).toHaveBeenCalledOnce();
 		expect(message.retry).not.toHaveBeenCalled();
 	});
@@ -187,7 +187,7 @@ describe('dead-letter queue consumer', () => {
 
 		await worker.queue(makeBatch([message], 'pr-review-dlq'), env);
 
-		expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, false, 1, 3);
+		expect(surfaceFailure).toHaveBeenCalledWith(message.body, env, false, false, 1, 3, expect.stringContaining('did not finish'));
 	});
 
 	it('acks so the dead-letter queue drains instead of accumulating forever', async () => {
