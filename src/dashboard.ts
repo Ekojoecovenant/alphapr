@@ -353,7 +353,8 @@ async function handleInstallationRoute(request: Request, env: Env, installationI
 			return messagePage('Not saved', 'That key is longer than any provider issues.', 400);
 		}
 		const stored = await encryptSecret(key, env.KEY_ENCRYPTION_SECRET);
-		await setInstallationKey(env.DB, installationId, stored, `…${key.slice(-4)}`);
+		const saved = await setInstallationKey(env.DB, installationId, stored, `…${key.slice(-4)}`);
+		if (!saved) return messagePage('Not saved', 'That installation no longer exists.', 404);
 		return redirect('/dashboard?saved=key');
 	}
 

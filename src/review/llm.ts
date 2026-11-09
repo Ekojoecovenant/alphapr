@@ -214,16 +214,24 @@ export async function reviewDiff(
 	});
 
 	if (!result.ok) {
+		// Provider bodies can be long and can echo request metadata; the failure
+		// comment and the log line both show this string, so it is capped here.
+		const body = result.body.replace(/\s+/g, ' ').slice(0, 300);
 		if (result.status === 401 || result.status === 403) {
-			throw new PermanentError(`${config.provider} auth error: ${result.status} ${result.body}`);
+			throw new PermanentError(`${config.provider} auth error: ${result.status} ${body}`);
 		}
-		throw new Error(`${config.provider} error: ${result.status} ${result.body}`);
+		throw new Error(`${config.provider} error: ${result.status} ${body}`);
 	}
 
 	if (!result.data.content) {
-		throw new Error(
-			`${config.provider} returned no content. finish_reason=${result.data.finishReason ?? 'n/a'} body=${result.data.rawBody.replace(/\s+/g, ' ').slice(0, 500)}`,
-		);
+		// A reasoning model can spend the whole completion budget thinking and
+		// return no text at all. Saying "no content" hides the one fact that
+		// explains it, so the budget failure is named.
+		const reason =
+			result.data.finishReason === 'length'
+				? 'the model used its entire token budget before writing an answer — raise the model budget or pick a model that reasons less'
+				: `finish_reason=${result.data.finishReason ?? 'n/a'}`;
+		throw new Error(`${config.provider} returned no content (${reason}). body=${result.data.rawBody.replace(/\s+/g, ' ').slice(0, 300)}`);
 	}
 
 	const parsed = parseReviewJson(result.data.content);

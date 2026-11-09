@@ -89,8 +89,13 @@ export async function getInstallation(db: D1Database, installationId: number): P
  * call: the caller passes ciphertext plus a four-character hint taken from the
  * key, which is all the dashboard is allowed to show.
  */
-export async function setInstallationKey(db: D1Database, installationId: number, apiKeyEncrypted: string, keyHint: string): Promise<void> {
-	await db
+export async function setInstallationKey(
+	db: D1Database,
+	installationId: number,
+	apiKeyEncrypted: string,
+	keyHint: string,
+): Promise<boolean> {
+	const result = await db
 		.prepare(
 			`UPDATE installations
        SET api_key_encrypted = ?, key_hint = ?,
@@ -99,4 +104,8 @@ export async function setInstallationKey(db: D1Database, installationId: number,
 		)
 		.bind(apiKeyEncrypted, keyHint, installationId)
 		.run();
+
+	// An UPDATE that matched nothing is not a success: the row was deleted or the
+	// id was never ours, and telling the user "saved" would be a quiet lie.
+	return (result.meta?.changes ?? 0) > 0;
 }

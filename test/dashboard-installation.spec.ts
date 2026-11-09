@@ -20,10 +20,11 @@ function makeEnv(db: D1Database): Env {
 	} as unknown as Env;
 }
 
-async function makeDb(role: 'admin' | 'member', storedKey: string | null) {
+async function makeDb(role: 'admin' | 'member', storedKey: string | null, changes = 1) {
 	return makeFakeDb({
 		sessions: [{ session_id: 'sid', last_used_at: null, expires_at: FUTURE, github_id: 4242, login: 'ekojoe', avatar_url: null }],
 		access: { '4242:12': { role, account_login: 'acme', account_type: 'Organization' } },
+		changes,
 		installationConfig: {
 			provider: 'openrouter',
 			model: 'deepseek/deepseek-v4-flash-0731',
@@ -59,6 +60,14 @@ describe('POST /dashboard/installations/:id/key', () => {
 		expect(write.args[1]).toBe('…wxyz');
 		expect(String(write.args[0])).not.toContain(STORED_KEY);
 		expect(write.args[2]).toBe(12);
+	});
+
+	it('reports a missing installation instead of claiming the key was saved', async () => {
+		const { db } = await makeDb('admin', null, 0);
+		const res = await handleDashboard(request('/dashboard/installations/12/key', { csrf: await csrf(), api_key: STORED_KEY }), makeEnv(db));
+
+		expect(res?.status).toBe(404);
+		expect(await res?.text()).toContain('no longer exists');
 	});
 
 	it('refuses a value too short to be a key', async () => {

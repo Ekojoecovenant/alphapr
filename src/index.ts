@@ -19,6 +19,13 @@ const DEAD_LETTER_QUEUE_NAME = 'pr-review-dlq';
 const MAX_RETRIES = 2;
 
 /**
+ * GitHub caps webhook payloads at 25 MB. Anything bigger is not a payload we
+ * would have completed on anyway, and buffering it before the signature check
+ * is free memory pressure for whoever sends it.
+ */
+const MAX_WEBHOOK_BYTES = 20_000_000;
+
+/**
  * Dead-lettered jobs carry no error text (the worker that failed is gone), so
  * the surfaced reason has to be stated rather than quoted.
  */
@@ -131,7 +138,14 @@ export default {
 			});
 		}
 
+		const declaredLength = Number(request.headers.get('content-length') ?? '0');
+		if (Number.isFinite(declaredLength) && declaredLength > MAX_WEBHOOK_BYTES) {
+			return new Response('payload too large', { status: 413 });
+		}
 		const rawBody = await request.text();
+		if (rawBody.length > MAX_WEBHOOK_BYTES) {
+			return new Response('payload too large', { status: 413 });
+		}
 
 		const valid = await verifySignature(env.GITHUB_WEBHOOK_SECRET, rawBody, request.headers.get('x-hub-signature-256'));
 
