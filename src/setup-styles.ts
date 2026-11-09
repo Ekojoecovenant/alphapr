@@ -287,13 +287,18 @@ form { padding: 26px 22px; }
 .field { display: flex; flex-direction: column; min-width: 0; }
 .field-wide { grid-column: 1 / -1; }
 .field label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
-.field input, .field select {
+.field input, .field select, .field textarea {
   width: 100%; padding: 11px 13px; font-family: var(--font-body); font-size: 14px;
   color: var(--ink); background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
   transition: border-color var(--motion) var(--ease);
 }
 .field input:hover, .field select:hover { border-color: var(--ink-3); }
-.field input::placeholder { color: var(--ink-3); }
+.field input::placeholder, .field textarea::placeholder { color: var(--ink-3); }
+.field textarea { resize: vertical; min-height: 74px; }
+.field-check { flex-direction: row; align-items: flex-start; flex-wrap: wrap; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-2); }
+.field-check input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--brand); }
+.field-check label { margin: 0; font-family: var(--font-body); font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--ink); }
+.field-check .field-help { flex-basis: 100%; margin: 0 0 0 26px; }
 .field-help { margin-top: 8px; font-size: 12.5px; line-height: 1.5; color: var(--ink-3); }
 .field-help.mono { font-family: var(--font-mono); font-size: 11px; }
 .field-help code { color: var(--ink-2); }
@@ -361,6 +366,8 @@ export const DASHBOARD_STYLES = `
 .dash-alert h2 { font-size: 0.98rem; margin-bottom: 8px; }
 .dash-alert p, .dash-alert li { font-size: 13.5px; color: var(--ink-2); }
 .dash-alert ul { margin: 8px 0 0; padding-left: 18px; }
+.dash-alert.is-ok { border-color: color-mix(in srgb, var(--ok) 32%, transparent); background: var(--ok-soft); }
+.dash-alert.is-ok h2 { color: var(--ink); }
 .dash-alert code { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
 .inst { border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-2); padding: 22px 24px; margin-top: 16px; box-shadow: var(--shadow); }
 .inst-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 14px; }
@@ -370,7 +377,8 @@ export const DASHBOARD_STYLES = `
 .repo-list { list-style: none; margin: 18px 0 0; padding: 0; border-top: 1px solid var(--line); }
 .repo { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px solid var(--line); font-size: 13px; }
 .repo:last-child { border-bottom: 0; }
-.repo-name { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.repo-name { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; color: var(--ink); text-decoration: none; border-bottom: 1px solid transparent; }
+a.repo-name:hover { border-bottom-color: var(--line-strong); }
 .repo-state { margin-left: auto; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
 .repo-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
 .repo-dot.is-off { background: var(--line-strong); }

@@ -163,6 +163,15 @@ export async function loadRepoConfig(
 	return mergeRepoConfig(installation, override);
 }
 
+/** The installation's own settings — what an unset override falls back to. */
+export async function loadInstallationDefaults(db: D1Database, installationId: number): Promise<InstallationDefaults | null> {
+	const row = await db
+		.prepare(`SELECT provider, model, severity_threshold, review_tone, ignore_paths FROM installations WHERE installation_id = ?`)
+		.bind(installationId)
+		.first<InstallationDefaults>();
+	return row ?? null;
+}
+
 /**
  * Should a review run for this repo? Fails **open**: a database hiccup must not
  * silently stop reviews, because silence is indistinguishable from "broken".

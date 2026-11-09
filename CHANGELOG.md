@@ -3,6 +3,24 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.9.0] — 2026-11-09
+
+### Added
+
+- **Per-repo control, phase P1.** Every repository in the dashboard is now a link: `/dashboard/installations/:id/repos/:owner/:name` opens its settings. Uncheck "Review this repository" and reviews stop there — silently, with no comment and no check run, while the rest of the account keeps going. This was the one thing GitHub's own settings could not express short of uninstalling the App
+- Per-repo overrides for provider, model, severity threshold, tone and ignored paths. Blank means inherit, and the form shows the installation's current default next to every field so the fallback is never a guess; fields that are overridden are tagged. "Reset to inherit" deletes the row rather than blanking values, so a later change on `/setup` reaches the repo again
+- `POST /dashboard/installations/:id/repos/:owner/:name` is the write. It requires `admin` (members see the same page disabled), a valid CSRF token, and — before anything is written — a GitHub call confirming the repository really belongs to that installation, so a crafted path cannot create a row for a repo the installation cannot see. POST-redirect-GET, with a confirmation banner
+- `src/review-config.ts`: `mergeRepoConfig` (pure, override-per-field), `loadRepoConfig`, `loadInstallationDefaults`, `shouldReviewRepo`, `saveRepoOverride`, `clearRepoOverride`. The review path resolves config through it instead of reading the installation row directly
+- `shouldReviewRepo` fails **open**: if D1 cannot be read, the review runs. A database hiccup and a deliberate switch-off are indistinguishable from the outside, and the wrong guess here would silently stop reviews
+
+### Changed
+
+- `src/review-handler.ts` now takes the provider, model, key, severity, tone and ignore paths from the resolved repo config, so an override applies to the next review with no redeploy
+
+### Notes
+
+- 243 tests. 14 for the new write path (admin versus member, CSRF, foreign repo, foreign installation, blank-means-inherit, reset) and 16 for the merge semantics
+- Still open on the dashboard: key replacement, test reviews, and review history — P1's remaining half plus P2/P3 in [ADR 0002](docs/adr/0002-self-serve-dashboard.md)
 ## [v1.8.0] — 2026-11-08
 
 ### Added
@@ -332,3 +350,4 @@ First public release. 🎉
 - Requires Cloudflare Workers Paid plan (Queues). Free-tier mode is on the roadmap.
 
 [v0.1.0]: https://github.com/Ekojoecovenant/alphapr/releases/tag/v0.1.0
+
