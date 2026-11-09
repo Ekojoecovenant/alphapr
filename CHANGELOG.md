@@ -3,6 +3,16 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.10.6] — 2026-11-09
+
+### Security
+
+- **A webhook body larger than 20 MB is refused before it is read**, on `content-length` and again on what actually arrived. GitHub's own cap is 25 MB; buffering anything past that only helps whoever sent it
+- **The check-run pager only follows `Link` targets that are still `https://api.github.com`.** The header comes from the server, and following it blindly could have carried the installation token to another origin
+- **Provider error bodies are capped at 300 characters** before they reach a log line or a public failure comment, and the `finish_reason=length` empty answer now says what actually happened: the model spent its whole budget before writing anything
+- **A key that matched no installation row is reported as gone**, not saved — `setInstallationKey` returns whether the `UPDATE` changed anything instead of trusting that it did
+
+296 tests.
 ## [v1.10.5] — 2026-11-09
 
 ### Security

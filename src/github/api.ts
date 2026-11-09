@@ -211,11 +211,26 @@ export async function getFailedCheckRuns(
 			}
 		}
 
-		// Follow GitHub's Link header for the next page, if present
+		// Follow GitHub's Link header for the next page, if present. The header
+		// comes from the server, so it is treated as data: only an https URL on
+		// api.github.com is followed, or a compromised response could walk the
+		// installation token to another origin.
 		const linkHeader = res.headers.get('Link');
 		const nextMatch = linkHeader?.match(/<([^>]+)>;\s*rel="next"/);
-		url = nextMatch ? nextMatch[1] : null;
+		url = nextMatch ? safeNextPageUrl(nextMatch[1]) : null;
 	}
 
 	return failures;
+}
+
+/** GitHub's next-page URL, but only when it stays on the API origin. */
+export function safeNextPageUrl(candidate: string): string | null {
+	try {
+		const parsed = new URL(candidate);
+		if (parsed.protocol !== 'https:') return null;
+		if (parsed.hostname !== 'api.github.com') return null;
+		return parsed.toString();
+	} catch {
+		return null;
+	}
 }

@@ -89,8 +89,13 @@ export async function getInstallation(db: D1Database, installationId: number): P
  * call: the caller passes ciphertext plus a four-character hint taken from the
  * key, which is all the dashboard is allowed to show.
  */
-export async function setInstallationKey(db: D1Database, installationId: number, apiKeyEncrypted: string, keyHint: string): Promise<void> {
-	await db
+export async function setInstallationKey(
+	db: D1Database,
+	installationId: number,
+	apiKeyEncrypted: string,
+	keyHint: string,
+): Promise<boolean> {
+	const result = await db
 		.prepare(
 			`UPDATE installations
        SET api_key_encrypted = ?, key_hint = ?,
@@ -99,4 +104,18 @@ export async function setInstallationKey(db: D1Database, installationId: number,
 		)
 		.bind(apiKeyEncrypted, keyHint, installationId)
 		.run();
+
+	// `changes` alone cannot answer "did this row exist": a provider can be told
+	// to store a key it already had, and the count is then zero even though the
+	// update matched. So a zero count is followed by one existence check rather
+	// than turned into a 404 that would be wrong.
+	const changes = result.meta?.changes ?? 0;
+	if (changes > 0) return true;
+
+	const row = await db
+		.prepare('SELECT 1 AS present FROM installations WHERE installation_id = ?')
+		.bind(installationId)
+		.first<{ present: number }>();
+
+	return row !== null;
 }

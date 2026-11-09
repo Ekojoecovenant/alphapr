@@ -24,6 +24,8 @@ export interface FakeDbSeed {
 	repoOverrides?: Record<string, Record<string, unknown>>;
 	/** The `user_installations` row a write authorizes against, keyed `"<userId>:<installationId>"`. */
 	access?: Record<string, { role: string; account_login: string; account_type: string }>;
+	/** Rows changed by every `run()`; defaults to 1. Set to 0 to fake a no-op update. */
+	changes?: number;
 }
 
 export interface FakeDb {
@@ -95,7 +97,9 @@ export function makeFakeDb(seed: FakeDbSeed = {}): FakeDb {
 				},
 				async run(): Promise<unknown> {
 					writes.push({ sql, args });
-					return { success: true, meta: {} };
+					// Callers treat `changes === 0` as "nothing matched", so the fake
+					// reports one changed row unless a seed says otherwise.
+					return { success: true, meta: { changes: seed.changes ?? 1 } };
 				},
 			};
 		},
