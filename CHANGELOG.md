@@ -3,6 +3,13 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.10.3] — 2026-11-09
+
+### Security
+
+- **A pull request can no longer hide its own code from the reviewer.** `parseDiff` treated any line starting with `+++ ` as a file header, including a line inside a hunk. Because an added line whose content begins `++ b/dist/x` is transmitted as `+++ b/dist/x`, a PR author could switch the parser to a new (ignored) path and have every later line of the real file dropped from the annotated diff — a silent review bypass that still reported success. Headers are now only recognised before the first `@@` of a file and only inside a header zone opened by `diff --git`
+- **Model output is neutralised before it is posted under the bot's identity.** Finding titles, bodies, suggestions, the verdict line and the raw fallback all pass through `sanitizeInline` / `sanitizeBlock`, which strip HTML and comments, break `@`-mentions with a zero-width space so an injected diff cannot ping people or teams, defuse link and image syntax, forbid a field from opening or closing a fence of its own, collapse runaway blank lines, and cap lengths (200 chars for titles, 4 000 for bodies and suggestions)
+- **The review prompt is capped at 120 000 characters** of annotated diff (and 20 000 of previous-review context), truncated on a line boundary with an explicit `[diff truncated …]` note, so a hostile diff cannot drive an unbounded bill against `maxTokens: 16000` with up to three attempts
 ## [v1.10.2] — 2026-11-09
 
 ### Security

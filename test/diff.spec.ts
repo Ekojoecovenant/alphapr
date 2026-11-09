@@ -99,4 +99,42 @@ index abc..def 100644
 		expect(result.validLines.size).toBe(0);
 		expect(result.annotated).toBe('');
 	});
+
+	// Security regression: an added line whose content starts "++ b/..." is
+	// transmitted as "+++ b/...". Read as a header, it renames the file and can
+	// switch ignore-path matching on, hiding everything after it from the
+	// reviewer while the review still reports success.
+	it('treats an added "++" line inside a hunk as content, not a file header', () => {
+		const diff = `diff --git a/src/app.ts b/src/app.ts
+index abc..def 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1,2 +1,4 @@
+ const a = 1;
++++ b/dist/evil.js
++const evil = 2;`;
+
+		const result = parseDiff(diff, ['dist/**']);
+
+		const lines = result.validLines.get('src/app.ts');
+		expect(lines?.has(2)).toBe(true);
+		expect(lines?.has(3)).toBe(true);
+		expect(result.annotated).toContain('3: +const evil = 2;');
+		expect(result.validLines.has('dist/evil.js')).toBe(false);
+	});
+
+	it('does not let an added "+++ " line change which file the rest of the hunk belongs to', () => {
+		const diff = `diff --git a/src/app.ts b/src/app.ts
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -10,1 +10,3 @@
+ const a = 1;
++++ b/other.ts
++const b = 2;`;
+
+		const result = parseDiff(diff);
+
+		expect(result.validLines.get('src/app.ts')?.has(12)).toBe(true);
+		expect(result.validLines.has('other.ts')).toBe(false);
+	});
 });

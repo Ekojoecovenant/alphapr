@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseReviewJson, reviewDiff } from '../src/review/llm';
+import { MAX_DIFF_CHARS, parseReviewJson, reviewDiff } from '../src/review/llm';
 
 describe('parseReviewJson', () => {
 	it('parses clean, unfenced JSON directly', () => {
@@ -257,5 +257,55 @@ describe('reviewDiff reasoning-budget wiring', () => {
 
 		expect(body().thinking).toEqual({ type: 'enabled', budget_tokens: 2000 });
 		expect(body().system).toBeTypeOf('string');
+	});
+});
+
+// An unbounded diff is an unbounded bill (16k output tokens, 3 attempts) and an
+// unbounded worker budget, so the prompt is capped and the truncation is stated.
+describe('reviewDiff diff cap', () => {
+	function capturePrompt() {
+		let body: Record<string, unknown> | undefined;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+				body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+				return new Response(JSON.stringify({ choices: [{ message: { content: '{"verdict":"ok","findings":[]}' } }] }), {
+					status: 200,
+				});
+			}),
+		);
+		return () => {
+			if (!body) throw new Error('fetch was never called');
+			const messages = body.messages as { content: string }[];
+			return messages[messages.length - 1].content;
+		};
+	}
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	it('leaves a small diff untouched', async () => {
+		const prompt = capturePrompt();
+
+		await reviewDiff('1: const a = 1;', { apiKey: 'key', model: 'm', reviewTone: 'thorough', provider: 'openrouter' });
+
+		expect(prompt()).toContain('1: const a = 1;');
+		expect(prompt()).not.toContain('truncated');
+	});
+
+	it('truncates a huge diff on a line boundary and says so', async () => {
+		const spy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+		const prompt = capturePrompt();
+		const huge = Array.from({ length: 20_000 }, (_, i) => `${i + 1}: const value${i} = ${i};`).join('\n');
+
+		await reviewDiff(huge, { apiKey: 'key', model: 'm', reviewTone: 'thorough', provider: 'openrouter' });
+
+		const sent = prompt();
+		expect(sent.length).toBeLessThan(MAX_DIFF_CHARS + 300);
+		expect(sent).toContain(`[diff truncated at ${MAX_DIFF_CHARS} characters`);
+		expect(sent).toContain('1: const value0 = 0;');
+		expect(spy).toHaveBeenCalledWith(expect.stringContaining('Diff truncated from'));
 	});
 });
