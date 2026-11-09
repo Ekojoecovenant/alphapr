@@ -322,3 +322,54 @@ describe('fixes from AlphaPR review (PR #46, #49)', () => {
 		expect(html).toContain('<label for="review_tone">Review tone<span class="badge">overridden</span></label>');
 	});
 });
+
+describe('step-up before a write', () => {
+	function staleDb() {
+		const createdAt = new Date(Date.now() - 30 * 3_600_000).toISOString().replace('T', ' ').slice(0, 19);
+		return makeFakeDb({
+			sessions: [
+				{
+					session_id: 'sid',
+					created_at: createdAt,
+					last_used_at: null,
+					expires_at: FUTURE,
+					github_id: 4242,
+					login: 'ekojoecovenant',
+					avatar_url: null,
+				},
+			],
+			access: { '4242:12': { role: 'admin', account_login: 'acme', account_type: 'Organization' } },
+			installationConfig: INSTALLATION,
+			repoOverrides: {},
+		});
+	}
+
+	it('sends an old session back through GitHub instead of writing', async () => {
+		const { db, writesStartingWith } = staleDb();
+		const res = await handleDashboard(await post({ csrf: await csrf() }), makeEnv(db));
+
+		expect(res?.status).toBe(302);
+		expect(res?.headers.get('Location')).toBe(`/auth/github?next=${encodeURIComponent(PATH)}`);
+		expect(writesStartingWith('INSERT INTO repos')).toHaveLength(0);
+	});
+
+	it('does the same for a key change', async () => {
+		const { db, writesStartingWith } = staleDb();
+		const res = await handleDashboard(
+			await post({ csrf: await csrf(), api_key: 'sk-new-key-1234' }, '/dashboard/installations/12/key'),
+			makeEnv(db),
+		);
+
+		expect(res?.status).toBe(302);
+		expect(res?.headers.get('Location')).toContain('/auth/github?next=');
+		expect(writesStartingWith('UPDATE installations SET api_key_encrypted')).toHaveLength(0);
+	});
+
+	it('still lets an old session read the page', async () => {
+		const { db } = staleDb();
+		const res = await handleDashboard(request(), makeEnv(db));
+
+		expect(res?.status).toBe(200);
+		expect(await res?.text()).toContain('Reset to inherit');
+	});
+});

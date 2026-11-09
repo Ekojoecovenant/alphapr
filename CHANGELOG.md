@@ -3,6 +3,19 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.10.4] — 2026-11-09
+
+### Security
+
+- **The `/setup` form token is no longer a portable bearer credential.** It was a signed blob in a hidden field, valid for ten minutes and replayable by anyone who could read the page — a log, a screenshot, a shared browser, or an XSS elsewhere on the origin — and `/setup/save` had no session, no cookie binding and no CSRF field of its own. The token now carries a digest of a nonce cookie (`alphapr_setup_binding`, `HttpOnly`, `SameSite=Lax`, `Path=/setup`, ten minutes) that only the browser which completed the GitHub round trip holds, so the token alone buys nothing
+- **Every HTML response now carries a Content Security Policy and the usual hardening headers** — `default-src 'none'`, `form-action 'self'`, `frame-ancestors 'none'`, an explicit `script-src`/`connect-src`, plus `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy` and a `Permissions-Policy`, and `Cache-Control: no-store` on anything that reflects a signed-in view
+- **three.js is loaded with a pinned version and Subresource Integrity** (`sha384-…` + `crossorigin`), so a compromised or substituted CDN response is refused by the browser and the page keeps the static scene it already drew
+- **Sessions have an absolute seven-day cap** on top of the 30-day idle slide, and **writes require a session opened within a day**: an older session is sent back through GitHub (`/auth/github?next=…`) before the write is allowed, which refreshes the role snapshot that authorises it. `next` is accepted only as a same-origin path and never as a `//host`, a scheme or a backslash escape
+
+### Changed
+
+- The dashboard's message pages, sign-in pages and setup pages share one header set (`src/security.ts`) instead of each building its own `Content-Type`-only response
+
 ## [v1.10.3] — 2026-11-09
 
 ### Security

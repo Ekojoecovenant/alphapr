@@ -4,11 +4,17 @@
 // then dropped. Auth tokens stay inside the worker, where they are bound to an
 // installation and expire on their own.
 
+import { htmlHeaders } from './security';
 import { getAuthorizedInstallations, hmacSign, hmacVerify, randomHex } from './setup';
 
 export const SESSION_COOKIE = 'alphapr_session';
 const NONCE_COOKIE = 'alphapr_auth_nonce';
+const NEXT_COOKIE = 'alphapr_auth_next';
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days of idle
+/** A session dies after this long no matter how much it is used. */
+const SESSION_MAX_SECONDS = 7 * 24 * 60 * 60;
+/** Writes require a session this fresh, which forces a new role snapshot. */
+export const STEP_UP_SECONDS = 24 * 60 * 60;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 /** Refresh the `last_used_at` stamp at most this often, to keep reads read-ish. */
 const TOUCH_INTERVAL_MS = 60 * 60 * 1000;
@@ -20,6 +26,8 @@ export interface SessionUser {
 	githubId: number;
 	login: string;
 	avatarUrl: string | null;
+	/** When this session was opened; the absolute cap and step-up both read it. */
+	createdAt: string;
 }
 
 interface RawInstallation {
@@ -38,10 +46,7 @@ export function readCookie(request: Request, name: string): string | null {
 }
 
 function htmlResponse(body: string, status = 200): Response {
-	return new Response(body, {
-		status,
-		headers: { 'Content-Type': 'text/html; charset=utf-8' },
-	});
+	return new Response(body, { status, headers: htmlHeaders() });
 }
 
 function redirect(location: string, extraHeaders: Record<string, string> = {}): Response {
@@ -98,12 +103,19 @@ export async function getSessionUser(request: Request, env: Env): Promise<Sessio
 	if (!sessionId) return null;
 
 	const row = await env.DB.prepare(
-		`SELECT s.id AS session_id, s.last_used_at, u.github_id, u.login, u.avatar_url
+		`SELECT s.id AS session_id, s.created_at, s.last_used_at, u.github_id, u.login, u.avatar_url
      FROM sessions s JOIN users u ON u.github_id = s.user_id
-     WHERE s.id = ? AND s.expires_at > datetime('now')`,
+     WHERE s.id = ? AND s.expires_at > datetime('now') AND s.created_at > datetime('now', ?)`,
 	)
-		.bind(sessionId)
-		.first<{ session_id: string; last_used_at: string | null; github_id: number; login: string; avatar_url: string | null }>();
+		.bind(sessionId, `-${SESSION_MAX_SECONDS} seconds`)
+		.first<{
+			session_id: string;
+			created_at: string;
+			last_used_at: string | null;
+			github_id: number;
+			login: string;
+			avatar_url: string | null;
+		}>();
 
 	if (!row) return null;
 
@@ -115,7 +127,31 @@ export async function getSessionUser(request: Request, env: Env): Promise<Sessio
 			.run();
 	}
 
-	return { sessionId: row.session_id, githubId: row.github_id, login: row.login, avatarUrl: row.avatar_url };
+	return {
+		sessionId: row.session_id,
+		githubId: row.github_id,
+		login: row.login,
+		avatarUrl: row.avatar_url,
+		createdAt: row.created_at,
+	};
+}
+
+/**
+ * The role row written at sign-in is a snapshot: if it is removed on GitHub we
+ * would never hear about it. Writes therefore require a session opened within
+ * `STEP_UP_SECONDS`, which means a role that changed is picked up at the next
+ * write rather than at the next 30-day expiry.
+ */
+export function sessionIsStale(user: SessionUser): boolean {
+	const opened = Date.parse(`${user.createdAt.replace(' ', 'T')}Z`);
+	return !Number.isFinite(opened) || Date.now() - opened > STEP_UP_SECONDS * 1000;
+}
+
+/** Send a stale-session write back through GitHub, returning to the same page. */
+export function stepUpResponse(request: Request): Response {
+	const url = new URL(request.url);
+	const next = `${url.pathname}${url.search}`;
+	return redirect(`/auth/github?next=${encodeURIComponent(next)}`);
 }
 
 async function createSession(env: Env, githubId: number): Promise<string> {
@@ -129,6 +165,22 @@ async function createSession(env: Env, githubId: number): Promise<string> {
 
 async function destroySession(env: Env, sessionId: string): Promise<void> {
 	await env.DB.prepare(`DELETE FROM sessions WHERE id = ?`).bind(sessionId).run();
+}
+
+/**
+ * Only a same-origin absolute path: no scheme, no `//` host, no backslash
+ * (browsers read `\` as `/`, so `/\evil.com` is an open redirect), no control
+ * characters, and short enough to live in a cookie.
+ */
+export function safeNextPath(value: string | null | undefined): string | null {
+	if (!value) return null;
+	if (!value.startsWith('/') || value.startsWith('//')) return null;
+	if (value.includes('\\') || value.length > 200) return null;
+	for (const ch of value) {
+		const code = ch.codePointAt(0) ?? 0;
+		if (code < 0x20 || code === 0x7f) return null; // header-splitting characters
+	}
+	return value;
 }
 
 interface GitHubUser {
@@ -156,9 +208,18 @@ export async function handleAuth(request: Request, env: Env): Promise<Response |
 		redirectUrl.searchParams.set('scope', 'read:user');
 		redirectUrl.searchParams.set('state', state);
 
-		return redirect(redirectUrl.toString(), {
-			'Set-Cookie': cookieHeader(request, NONCE_COOKIE, nonce, 600, '/auth'),
-		});
+		const res = redirect(redirectUrl.toString());
+		res.headers.append('Set-Cookie', cookieHeader(request, NONCE_COOKIE, nonce, 600, '/auth'));
+		const next = safeNextPath(url.searchParams.get('next'));
+		if (next) {
+			// Kept out of the state blob so a crafted state cannot choose the
+			// destination; the cookie is written only by this route. Separate
+			// headers, never one comma-joined value — browsers treat that as a
+			// single cookie and drop the rest.
+			res.headers.append('Set-Cookie', cookieHeader(request, NEXT_COOKIE, next, 600, '/auth'));
+		}
+
+		return res;
 	}
 
 	// 2) Callback: verify, exchange, upsert the user, snapshot installations,
@@ -243,13 +304,16 @@ export async function handleAuth(request: Request, env: Env): Promise<Response |
 
 		const sessionId = await createSession(env, me.id);
 
+		const next = safeNextPath(readCookie(request, NEXT_COOKIE)) ?? '/dashboard';
+
 		// Two cookies, two headers. Joining them with "; " makes the browser read
 		// the second one's attributes as part of the first — which turned the
 		// session cookie into a Max-Age=0 deletion and made sign-in look like a
 		// page refresh.
-		const response = new Response(null, { status: 302, headers: { Location: '/dashboard' } });
+		const response = new Response(null, { status: 302, headers: { Location: next } });
 		response.headers.append('Set-Cookie', cookieHeader(request, SESSION_COOKIE, sessionId, SESSION_TTL_SECONDS));
 		response.headers.append('Set-Cookie', clearCookie(request, NONCE_COOKIE, '/auth'));
+		response.headers.append('Set-Cookie', clearCookie(request, NEXT_COOKIE, '/auth'));
 		return response;
 	}
 

@@ -7,6 +7,7 @@ import { createAppJWT, getInstallationToken } from './github/auth';
 import { shouldReviewRepo } from './review-config';
 import { decideReview, isReviewAction } from './review-gate';
 import { handlePREvent, type ReviewJob, surfaceFailure } from './review-handler';
+import { htmlHeaders, THREE_CDN_ORIGIN } from './security';
 import { handleSetup } from './setup';
 import { landingPage } from './setup-pages';
 import { verifySignature } from './verify';
@@ -123,7 +124,10 @@ export default {
 			}
 			return new Response(landingPage(), {
 				status: 200,
-				headers: { 'Content-Type': 'text/html; charset=utf-8' },
+				headers: htmlHeaders({
+					csp: { scripts: [THREE_CDN_ORIGIN] },
+					cacheControl: 'public, max-age=300',
+				}),
 			});
 		}
 

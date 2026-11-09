@@ -6,6 +6,8 @@ export interface FakeDbSeed {
 	/** Rows the session lookup (`sessions JOIN users`) should return. */
 	sessions?: Array<{
 		session_id: string;
+		/** Defaults to "just now"; set it to exercise the absolute session cap. */
+		created_at?: string;
 		last_used_at: string | null;
 		expires_at: string;
 		github_id: number;
@@ -37,6 +39,19 @@ function isExpired(expiresAt: string): boolean {
 	return Date.parse(`${expiresAt.replace(' ', 'T')}Z`) <= Date.now();
 }
 
+/** `datetime('now')` in SQLite's text shape. */
+function sqlNow(): string {
+	return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+
+/** A session dies seven days after it was opened, however much it is used. */
+const ABSOLUTE_CAP_MS = 7 * 24 * 60 * 60 * 1000;
+
+function isPastAbsoluteCap(createdAt: string | undefined): boolean {
+	if (!createdAt) return false; // no stamp means "opened now"
+	return Date.parse(`${createdAt.replace(' ', 'T')}Z`) <= Date.now() - ABSOLUTE_CAP_MS;
+}
+
 export function makeFakeDb(seed: FakeDbSeed = {}): FakeDb {
 	const writes: Array<{ sql: string; args: unknown[] }> = [];
 
@@ -47,8 +62,10 @@ export function makeFakeDb(seed: FakeDbSeed = {}): FakeDb {
 				async first<T>(): Promise<T | null> {
 					if (/FROM sessions s\s+JOIN users u/.test(sql)) {
 						const id = String(args[0]);
-						const row = (seed.sessions ?? []).find((s) => s.session_id === id && !isExpired(s.expires_at));
-						return (row as T) ?? null;
+						const row = (seed.sessions ?? []).find(
+							(s) => s.session_id === id && !isExpired(s.expires_at) && !isPastAbsoluteCap(s.created_at),
+						);
+						return row ? ({ ...row, created_at: row.created_at ?? sqlNow() } as T) : null;
 					}
 					if (/FROM user_installations WHERE user_id = \? AND installation_id = \?/.test(sql)) {
 						const key = `${Number(args[0])}:${Number(args[1])}`;
