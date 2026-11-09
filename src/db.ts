@@ -17,6 +17,7 @@ export interface InstallationConfig {
 
 export async function getReviewState(
 	db: D1Database,
+	installationId: number,
 	repoFullName: string,
 	prNumber: number,
 ): Promise<{ last_reviewed_sha: string; last_review_body: string | null } | null> {
@@ -24,9 +25,9 @@ export async function getReviewState(
 		.prepare(
 			`SELECT last_reviewed_sha, last_review_body
        FROM pr_reviews
-       WHERE repo_full_name = ? AND pr_number = ?`,
+       WHERE installation_id = ? AND repo_full_name = ? AND pr_number = ?`,
 		)
-		.bind(repoFullName, prNumber)
+		.bind(installationId, repoFullName, prNumber)
 		.first<{ last_reviewed_sha: string; last_review_body: string | null }>();
 
 	return row ?? null;
@@ -34,6 +35,7 @@ export async function getReviewState(
 
 export async function saveReviewState(
 	db: D1Database,
+	installationId: number,
 	repoFullName: string,
 	prNumber: number,
 	sha: string,
@@ -42,16 +44,16 @@ export async function saveReviewState(
 ): Promise<void> {
 	await db
 		.prepare(
-			`INSERT INTO pr_reviews (repo_full_name, pr_number, last_reviewed_sha, last_review_body, input_tokens, output_tokens)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(repo_full_name, pr_number)
+			`INSERT INTO pr_reviews (installation_id, repo_full_name, pr_number, last_reviewed_sha, last_review_body, input_tokens, output_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(installation_id, repo_full_name, pr_number)
       DO UPDATE SET last_reviewed_sha = excluded.last_reviewed_sha,
         last_review_body = excluded.last_review_body,
         input_tokens = excluded.input_tokens,
         output_tokens = excluded.output_tokens,
         reviewed_at = datetime('now')`,
 		)
-		.bind(repoFullName, prNumber, sha, reviewBody, usage?.inputTokens ?? null, usage?.outputTokens ?? null)
+		.bind(installationId, repoFullName, prNumber, sha, reviewBody, usage?.inputTokens ?? null, usage?.outputTokens ?? null)
 		.run();
 }
 

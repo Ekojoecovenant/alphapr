@@ -211,7 +211,7 @@ describe('handlePREvent — token usage', () => {
 
 		await handlePREvent(makeJob({ action: 'opened' }), { ...env, QUEUE_MODE: 'false' } as Env);
 
-		expect(mockedSaveReviewState).toHaveBeenCalledWith(expect.anything(), 'owner/repo', 7, HEAD_SHA, expect.any(String), {
+		expect(mockedSaveReviewState).toHaveBeenCalledWith(expect.anything(), 1, 'owner/repo', 7, HEAD_SHA, expect.any(String), {
 			inputTokens: 9000,
 			outputTokens: 3000,
 		});
@@ -242,7 +242,7 @@ describe('handlePREvent — token usage', () => {
 
 		const summary = mockedCompleteCheckRun.mock.calls[0][6];
 		expect(summary).not.toContain('tokens');
-		expect(mockedSaveReviewState).toHaveBeenCalledWith(expect.anything(), 'owner/repo', 7, HEAD_SHA, expect.any(String), null);
+		expect(mockedSaveReviewState).toHaveBeenCalledWith(expect.anything(), 1, 'owner/repo', 7, HEAD_SHA, expect.any(String), null);
 	});
 });
 

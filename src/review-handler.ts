@@ -189,7 +189,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 	}
 	// ─── end BYOK resolution ───
 
-	const state = await getReviewState(env.DB, job.repoFullName, job.prNumber);
+	const state = await getReviewState(env.DB, job.installationId, job.repoFullName, job.prNumber);
 
 	// Race guard: two deliveries for the same push can both be dispatched before
 	// either review has saved its state. index.ts already refuses the obvious
@@ -353,7 +353,7 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 	}
 
 	try {
-		await saveReviewState(env.DB, job.repoFullName, job.prNumber, job.headSha, renderForMemory(result), result.usage);
+		await saveReviewState(env.DB, job.installationId, job.repoFullName, job.prNumber, job.headSha, renderForMemory(result), result.usage);
 	} catch (err) {
 		console.error(`Failed to save review state (comments already posted): ${err instanceof Error ? err.message : err}`);
 	}

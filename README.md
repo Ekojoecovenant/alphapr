@@ -64,7 +64,7 @@ If a force-push wipes out the last reviewed commit, AlphaPR detects the 404 and 
 
 **A queue, because the first version broke.** The initial build did everything inside the webhook handler with `waitUntil()`. Then real LLM calls started blowing past the 30-second background limit — the logs literally showed reviews dying mid-generation. The fix was the architecture the project should have had anyway: the Worker verifies and dispatches in milliseconds, then hands the task to the queue, and the queue consumer handles the slow work gracefully — a 15-minute budget, automatic retries, and a dead-letter queue for anything that still fails. Free-tier mode later resurrected the original `waitUntil` path as an opt-in for self-hosters without a paid plan.
 
-**D1, because she remembers.** A single table stores the last reviewed commit SHA and the previous review body per PR. That's what makes incremental reviews possible — and what stops the bot from re-litigating the whole PR on every push. Severity-threshold filtering is applied only for display; the full review is always what's remembered, so a below-threshold finding isn't silently forgotten.
+**D1, because she remembers.** A single table stores the last reviewed commit SHA and the previous review body per PR, keyed by installation as well as repository, so two tenants that happen to use the same owner/name never share a memory. That's what makes incremental reviews possible — and what stops the bot from re-litigating the whole PR on every push. Severity-threshold filtering is applied only for display; the full review is always what's remembered, so a below-threshold finding isn't silently forgotten.
 
 **Our own diff parser, because models can't count.** LLMs are unreliable at deriving line numbers from hunk offsets. So AlphaPR computes the numbers itself, hands them to the model inside the annotated diff, and verifies every returned line reference against the parsed diff before posting. The parser tracks hunk-body state explicitly, so extended file-header metadata is handled correctly and hunk content is never mistaken for a header. Hallucinated locations demote gracefully to the summary instead of producing broken comments.
 
@@ -167,6 +167,7 @@ pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0009_users_se
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0010_repos.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0012_install_health.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0013_installation_key_hint.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0014_review_tenant.sql
 ```
 
 (There is no `0011` yet — it belongs to the review-history phase of [ADR 0002](docs/adr/0002-self-serve-dashboard.md), not to a skipped file.)
