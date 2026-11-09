@@ -43,7 +43,14 @@ export function parseDiff(diff: string, ignorePaths: string[] = []): ParsedDiff 
 			continue;
 		}
 
-		if (line.startsWith('+++ ')) {
+		// A header is only legal in the header zone: before the first `@@` of the
+		// file, and only after a `diff --git` opened that zone. Without both
+		// guards, an *added* line whose content starts `++ b/...` arrives as
+		// `+++ b/...` and is read as a new file header — which switches
+		// `currentPath`, can flip `ignoring` on, and drops the rest of the real
+		// file. A PR author could then hide code from the reviewer while the
+		// review still reports success.
+		if (!inHunk && pendingFileHeaders.length > 0 && line.startsWith('+++ ')) {
 			currentPath = line.startsWith('+++ b/') ? line.slice(6) : null;
 			ignoring = currentPath ? matchesIgnore(currentPath, ignorePaths) : false;
 			if (currentPath && !ignoring && !validLines.has(currentPath)) {

@@ -155,6 +155,24 @@ export interface ReviewConfig {
 	provider: Provider;
 }
 
+/**
+ * Cheap ceiling on what one review may cost. `maxTokens` is 16k and the model
+ * can be retried three times, so an unbounded diff is an unbounded bill and an
+ * unbounded KV/worker time budget. Truncation keeps the start of the diff (the
+ * part a reviewer reads first) and says so in the prompt, so the model can be
+ * honest about what it did not see instead of silently reviewing half a file.
+ */
+export const MAX_DIFF_CHARS = 120_000;
+const MAX_PREVIOUS_REVIEW_CHARS = 20_000;
+
+function capDiff(annotatedDiff: string): string {
+	if (annotatedDiff.length <= MAX_DIFF_CHARS) return annotatedDiff;
+	console.log(`Diff truncated from ${annotatedDiff.length} to ${MAX_DIFF_CHARS} chars before review`);
+	const kept = annotatedDiff.slice(0, MAX_DIFF_CHARS);
+	const cutAt = kept.lastIndexOf('\n');
+	return `${cutAt > 0 ? kept.slice(0, cutAt) : kept}\n\n[diff truncated at ${MAX_DIFF_CHARS} characters — the rest of the change was not reviewed]`;
+}
+
 export async function reviewDiff(
 	annotatedDiff: string,
 	config: ReviewConfig,
@@ -170,13 +188,13 @@ export async function reviewDiff(
 	if (previousReview) {
 		userMessages.push({
 			role: 'user',
-			content: `You previously reviewed this PR and said the following. Do NOT repeat points you already made — review only the new changes:\n\n${previousReview}`,
+			content: `You previously reviewed this PR and said the following. Do NOT repeat points you already made — review only the new changes:\n\n${previousReview.slice(0, MAX_PREVIOUS_REVIEW_CHARS)}`,
 		});
 	}
 
 	userMessages.push({
 		role: 'user',
-		content: `Review this pull request diff:\n\n${annotatedDiff}`,
+		content: `Review this pull request diff:\n\n${capDiff(annotatedDiff)}`,
 	});
 
 	const toneInstruction =
