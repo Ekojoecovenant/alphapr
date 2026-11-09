@@ -392,9 +392,27 @@ a.repo-name:hover { border-bottom-color: var(--line-strong); }
 }
 .inst-tools input[type="password"]:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
 .inst-tools .field-help { flex-basis: 100%; margin: 2px 0 0; }
+.dash-nav { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 22px 0 0; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper-2); width: fit-content; }
+.nav-link { padding: 7px 14px; border-radius: 999px; font-size: 12px; letter-spacing: 0.02em; color: var(--ink-2); text-decoration: none; }
+.nav-link:hover { color: var(--ink); background: var(--paper-3); }
+.nav-link.is-active { background: var(--ink); color: var(--paper); }
+.dash-table-wrap { margin-top: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-2); overflow-x: auto; box-shadow: var(--shadow); }
+.dash-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.dash-table th { text-align: left; padding: 12px 18px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.dash-table td { padding: 11px 18px; border-bottom: 1px solid var(--line); color: var(--ink-2); vertical-align: top; }
+.dash-table tr:last-child td { border-bottom: 0; }
+.dash-table .num { text-align: right; white-space: nowrap; }
+.dash-table a { color: var(--ink); text-decoration: none; border-bottom: 1px solid transparent; }
+.dash-table a:hover { border-bottom-color: var(--line-strong); }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-top: 24px; }
+.stat { border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-2); padding: 16px 18px; }
+.stat .kicker { margin: 0 0 8px; }
+.stat-value { font-family: var(--font-display); font-size: 1.5rem; letter-spacing: -0.02em; color: var(--ink); }
+.fineprint { margin-top: 16px; font-size: 12px; line-height: 1.6; color: var(--ink-3); max-width: 78ch; }
 @media (max-width: 620px) {
   .inst { padding: 18px 16px; }
   .user-strip .who { width: 100%; }
+  .dash-table th, .dash-table td { padding: 10px 12px; }
 }
 `;
 

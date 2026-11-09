@@ -186,7 +186,7 @@ describe('routing', () => {
 
 	it('404s an unknown dashboard sub-route', async () => {
 		const { db } = makeFakeDb();
-		const res = await handleDashboard(dashboardRequest('/dashboard/reviews'), makeEnv(db));
+		const res = await handleDashboard(dashboardRequest('/dashboard/nonsense'), makeEnv(db));
 		expect(res?.status).toBe(404);
 	});
 

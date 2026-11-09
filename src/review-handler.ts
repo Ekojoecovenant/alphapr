@@ -1,5 +1,5 @@
 import { decryptSecret } from './crypto';
-import { getReviewState, saveReviewState } from './db';
+import { getReviewState, recordReview, saveReviewState } from './db';
 import { PermanentError } from './errors';
 import {
 	completeCheckRun,
@@ -356,6 +356,23 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 		await saveReviewState(env.DB, job.installationId, job.repoFullName, job.prNumber, job.headSha, renderForMemory(result), result.usage);
 	} catch (err) {
 		console.error(`Failed to save review state (comments already posted): ${err instanceof Error ? err.message : err}`);
+	}
+
+	// The audit trail: one row per posted review, separate from the per-PR
+	// memory above (which is overwritten). Best-effort by design — the review
+	// has already been posted, so a failed insert must not fail the job.
+	try {
+		await recordReview(env.DB, {
+			installationId: job.installationId,
+			repoFullName: job.repoFullName,
+			prNumber: job.prNumber,
+			headSha: job.headSha,
+			provider,
+			model,
+			usage: result.usage,
+		});
+	} catch (err) {
+		console.error(`Failed to record review history (review already posted): ${err instanceof Error ? err.message : err}`);
 	}
 
 	if (env.QUEUE_MODE === 'true') {

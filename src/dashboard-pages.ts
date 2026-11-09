@@ -2,6 +2,7 @@
 // the signer's installations are doing. Server-rendered, same design system.
 
 import { type SessionUser } from './auth';
+import { formatUsd } from './pricing';
 import { type InstallationDefaults, type RepoOverrideRow, type ResolvedRepoConfig } from './review-config';
 import { esc, shell } from './setup-pages';
 
@@ -165,7 +166,8 @@ export function dashboardPage(data: DashboardData): string {
 		'Dashboard',
 		`<div class="dash"><div class="shell">
       ${userStrip(user, csrf)}
-      <header class="page-head" style="margin-top: 28px;">
+      ${dashNav('overview')}
+      <header class="page-head" style="margin-top: 20px;">
         <h1>Your installations.</h1>
         <p class="lede">${installations.length} installation${installations.length === 1 ? '' : 's'}, ${repoCount} repositor${repoCount === 1 ? 'y' : 'ies'}, ${enabledCount} being reviewed. Open a repository to switch it off or override its provider, model, severity, tone or ignored paths. The installation-wide defaults still live on <a href="/setup">/setup</a>.</p>
       </header>
@@ -275,6 +277,199 @@ export function repoSettingsPage(data: RepoSettingsData): string {
       </header>
       ${banner}
       ${content}
+    </div></div>`,
+		{ signedIn: true, login: user.login, csrf },
+	);
+}
+
+// ─── P2: review history and what it cost ───
+//
+// Two pages, one source of truth each: `reviewsPage` answers "what happened",
+// `usagePage` answers "what did it add up to". Both are read-only and both are
+// scoped by the same installation list the overview already uses.
+
+function dashNav(active: 'overview' | 'reviews' | 'usage'): string {
+	const link = (href: string, label: string, key: typeof active) =>
+		`<a class="nav-link${active === key ? ' is-active' : ''}" href="${href}"${active === key ? ' aria-current="page"' : ''}>${label}</a>`;
+	return `<nav class="dash-nav" aria-label="Dashboard">
+      ${link('/dashboard', 'Overview', 'overview')}
+      ${link('/dashboard/reviews', 'Reviews', 'reviews')}
+      ${link('/dashboard/usage', 'Usage', 'usage')}
+    </nav>`;
+}
+
+export interface ReviewRowView {
+	repoFullName: string;
+	prNumber: number;
+	headSha: string;
+	model: string | null;
+	provider: string | null;
+	createdAt: string;
+	inputTokens: number | null;
+	outputTokens: number | null;
+}
+
+export interface ReviewsData {
+	user: SessionUser;
+	csrf: string;
+	rows: ReviewRowView[];
+	/** Every recorded review, so the page can be honest about truncation. */
+	total: number;
+	installations: number;
+}
+
+/** `2026-11-09 16:04:11` → `2026-11-09 16:04`. SQLite gives UTC; say so. */
+function shortTime(value: string): string {
+	return value.length >= 16 ? `${value.slice(0, 16)} UTC` : value;
+}
+
+export function reviewsPage(data: ReviewsData): string {
+	const { user, csrf, rows } = data;
+	const scope =
+		data.total > rows.length
+			? `Showing the ${rows.length} most recent of ${data.total} recorded reviews.`
+			: `${data.total} recorded review${data.total === 1 ? '' : 's'}.`;
+
+	const table =
+		rows.length === 0
+			? `<div class="card">
+          <p class="card-title">No reviews recorded yet.</p>
+          <p class="muted">History starts with the first review after v1.11.0 was deployed. Reviews AlphaPR posted before that are still remembered per pull request, but they were not recorded here.</p>
+        </div>`
+			: `<div class="dash-table-wrap">
+        <table class="dash-table">
+          <caption class="sr-only">Recent AlphaPR reviews, newest first</caption>
+          <thead>
+            <tr>
+              <th scope="col">When</th>
+              <th scope="col">Pull request</th>
+              <th scope="col">Commit</th>
+              <th scope="col">Model</th>
+              <th scope="col" class="num">Tokens</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+							.map((row) => {
+								const tokens =
+									row.inputTokens == null && row.outputTokens == null
+										? '—'
+										: `${(row.inputTokens ?? 0).toLocaleString('en-US')} in / ${(row.outputTokens ?? 0).toLocaleString('en-US')} out`;
+								return `<tr>
+                <td class="mono">${esc(shortTime(row.createdAt))}</td>
+                <td><a href="https://github.com/${esc(row.repoFullName)}/pull/${row.prNumber}">${esc(row.repoFullName)} #${row.prNumber}</a></td>
+                <td class="mono">${esc(row.headSha.slice(0, 7))}</td>
+                <td class="mono">${esc(row.model ?? 'unknown')}${row.provider ? `<span class="muted"> · ${esc(row.provider)}</span>` : ''}</td>
+                <td class="num mono">${esc(tokens)}</td>
+              </tr>`;
+							})
+							.join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+	return shell(
+		'Review history',
+		`<div class="dash"><div class="shell">
+      ${userStrip(user, csrf)}
+      ${dashNav('reviews')}
+      <header class="page-head">
+        <h1>What was reviewed.</h1>
+        <p class="lede">One row per review AlphaPR posted, newest first, across the ${data.installations} installation${data.installations === 1 ? '' : 's'} you administer. A pull request you push to twice appears twice — the second row is the incremental review. ${scope}</p>
+      </header>
+      ${table}
+    </div></div>`,
+		{ signedIn: true, login: user.login, csrf },
+	);
+}
+
+export interface UsageModelRow {
+	model: string | null;
+	provider: string | null;
+	reviews: number;
+	inputTokens: number;
+	outputTokens: number;
+	cost: number | null;
+}
+
+export interface UsageData {
+	user: SessionUser;
+	csrf: string;
+	totals: { reviews: number; inputTokens: number; outputTokens: number };
+	cost: number | null;
+	byModel: UsageModelRow[];
+	pricingAsOf: string;
+	installations: number;
+}
+
+export function usagePage(data: UsageData): string {
+	const { user, csrf, totals, byModel } = data;
+	const fmt = (n: number) => n.toLocaleString('en-US');
+
+	const headline = `<div class="stat-grid">
+      <div class="stat">
+        <p class="kicker">reviews</p>
+        <p class="stat-value">${fmt(totals.reviews)}</p>
+      </div>
+      <div class="stat">
+        <p class="kicker">input tokens</p>
+        <p class="stat-value">${fmt(totals.inputTokens)}</p>
+      </div>
+      <div class="stat">
+        <p class="kicker">output tokens</p>
+        <p class="stat-value">${fmt(totals.outputTokens)}</p>
+      </div>
+      <div class="stat">
+        <p class="kicker">estimated cost</p>
+        <p class="stat-value">${data.cost == null ? '—' : formatUsd(data.cost)}</p>
+      </div>
+    </div>`;
+
+	const models =
+		byModel.length === 0
+			? `<div class="card"><p class="muted">No usage recorded yet.</p></div>`
+			: `<div class="dash-table-wrap">
+        <table class="dash-table">
+          <caption class="sr-only">Usage per model</caption>
+          <thead>
+            <tr>
+              <th scope="col">Model</th>
+              <th scope="col" class="num">Reviews</th>
+              <th scope="col" class="num">Input</th>
+              <th scope="col" class="num">Output</th>
+              <th scope="col" class="num">Estimate</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${byModel
+							.map(
+								(row) => `<tr>
+              <td class="mono">${esc(row.model ?? 'unknown')}${row.provider ? `<span class="muted"> · ${esc(row.provider)}</span>` : ''}</td>
+              <td class="num mono">${fmt(row.reviews)}</td>
+              <td class="num mono">${fmt(row.inputTokens)}</td>
+              <td class="num mono">${fmt(row.outputTokens)}</td>
+              <td class="num mono">${row.cost == null ? '<span class="muted">not priced</span>' : formatUsd(row.cost)}</td>
+            </tr>`,
+							)
+							.join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+	const unpriced = byModel.some((row) => row.cost == null);
+
+	return shell(
+		'Usage',
+		`<div class="dash"><div class="shell">
+      ${userStrip(user, csrf)}
+      ${dashNav('usage')}
+      <header class="page-head">
+        <h1>What it cost.</h1>
+        <p class="lede">Every review AlphaPR has posted from the ${data.installations} installation${data.installations === 1 ? '' : 's'} you administer, with the tokens its provider reported. You pay the provider directly — nothing here is billed by AlphaPR.</p>
+      </header>
+      ${headline}
+      ${models}
+      <p class="fineprint">Estimates use list prices per million tokens recorded ${esc(data.pricingAsOf)}; providers change prices, so treat these as a yardstick, not an invoice. ${unpriced ? 'Models missing from the price table show tokens only — AlphaPR does not guess a price it does not know.' : ''} The review itself is counted; the optional PR summary call is not, which makes this a floor rather than a ceiling.</p>
     </div></div>`,
 		{ signedIn: true, login: user.login, csrf },
 	);

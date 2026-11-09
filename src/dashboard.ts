@@ -11,9 +11,10 @@
 
 import { csrfToken, getSessionUser, sessionCookie, sessionIsStale, stepUpResponse, verifyCsrf } from './auth';
 import { decryptSecret, encryptSecret } from './crypto';
-import { type DashboardInstallation, dashboardPage, repoSettingsPage, signInPage } from './dashboard-pages';
-import { setInstallationKey } from './db';
+import { type DashboardInstallation, dashboardPage, repoSettingsPage, reviewsPage, signInPage, usagePage } from './dashboard-pages';
+import { countReviewHistory, listReviewHistory, loadUsageByModel, loadUsageTotals, setInstallationKey } from './db';
 import { createAppJWT, getInstallationToken } from './github/auth';
+import { estimateCost, PRICING_AS_OF } from './pricing';
 import { parseProvider } from './review/provider-types';
 import { getAdapter } from './review/providers';
 import {
@@ -393,9 +394,89 @@ async function handleInstallationRoute(request: Request, env: Env, installationI
 }
 const REPO_ROUTE = /^\/dashboard\/installations\/(\d+)\/repos\/([^/]+)\/([^/]+)$/;
 
+const HISTORY_ROUTES = new Set(['/dashboard/reviews', '/dashboard/usage']);
+
+/**
+ * P2: the two read-only pages that answer "what happened" and "what it cost".
+ * Read access is the same rule as the overview — any admin of the installation —
+ * and no write is possible from here.
+ */
+async function handleHistoryRoute(request: Request, env: Env, pathname: string): Promise<Response> {
+	if (request.method !== 'GET') {
+		return new Response('method not allowed', { status: 405, headers: { Allow: 'GET' } });
+	}
+
+	const user = await getSessionUser(request, env);
+	if (!user) return html(signInPage());
+
+	const csrf = await csrfToken(user.sessionId, env.SETUP_SIGNING_SECRET);
+
+	// The same admin-scoped list the overview uses, so a page can never show a
+	// row from an installation the signed-in user does not administer.
+	const installations = await loadInstallations(env, user.githubId).catch(() => null);
+	if (!installations) {
+		return messagePage('Not available', 'The dashboard could not read your installations just now. Reload to try again.', 503);
+	}
+	const ids = installations.map((installation) => installation.id);
+
+	const response =
+		pathname === '/dashboard/reviews'
+			? html(
+					reviewsPage({
+						user,
+						csrf,
+						installations: ids.length,
+						total: await countReviewHistory(env.DB, ids),
+						rows: (await listReviewHistory(env.DB, ids, 50)).map((row) => ({
+							repoFullName: row.repo_full_name,
+							prNumber: row.pr_number,
+							headSha: row.head_sha,
+							model: row.model,
+							provider: row.provider,
+							createdAt: row.created_at,
+							inputTokens: row.input_tokens,
+							outputTokens: row.output_tokens,
+						})),
+					}),
+				)
+			: await (async () => {
+					const [totals, byModel] = await Promise.all([loadUsageTotals(env.DB, ids), loadUsageByModel(env.DB, ids)]);
+					const priced = byModel.map((row) => ({
+						model: row.model,
+						provider: row.provider,
+						reviews: row.reviews,
+						inputTokens: row.inputTokens,
+						outputTokens: row.outputTokens,
+						cost: estimateCost(row.model, row.inputTokens, row.outputTokens),
+					}));
+					// Sum only what is priced. If nothing is, say nothing rather than
+					// showing "$0" for work that did cost money.
+					const known = priced.filter((row): row is typeof row & { cost: number } => row.cost != null);
+					const total = known.length === 0 ? null : known.reduce((sum, row) => sum + row.cost, 0);
+					return html(
+						usagePage({
+							user,
+							csrf,
+							installations: ids.length,
+							totals,
+							cost: total,
+							pricingAsOf: PRICING_AS_OF,
+							byModel: priced,
+						}),
+					);
+				})();
+
+	response.headers.append('Set-Cookie', sessionCookie(request, user.sessionId));
+	return response;
+}
+
 /** Route handler for /dashboard*, or null for anything else. */
 export async function handleDashboard(request: Request, env: Env): Promise<Response | null> {
 	const { pathname } = new URL(request.url);
+
+	if (HISTORY_ROUTES.has(pathname)) {
+		return handleHistoryRoute(request, env, pathname);
+	}
 
 	const repoMatch = REPO_ROUTE.exec(pathname);
 	if (repoMatch) {

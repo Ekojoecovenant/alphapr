@@ -26,6 +26,19 @@ export interface FakeDbSeed {
 	access?: Record<string, { role: string; account_login: string; account_type: string }>;
 	/** Rows changed by every `run()`; defaults to 1. Set to 0 to fake a no-op update. */
 	changes?: number;
+	/** Rows the P2 review-history queries read. */
+	reviewHistory?: Array<{
+		id?: number;
+		installation_id: number;
+		repo_full_name: string;
+		pr_number: number;
+		head_sha: string;
+		provider?: string | null;
+		model?: string | null;
+		input_tokens?: number | null;
+		output_tokens?: number | null;
+		created_at: string;
+	}>;
 }
 
 export interface FakeDb {
@@ -80,6 +93,15 @@ export function makeFakeDb(seed: FakeDbSeed = {}): FakeDb {
 						const key = `${Number(args[0])}:${String(args[1])}/${String(args[2])}`;
 						return ((seed.repoOverrides ?? {})[key] as T) ?? null;
 					}
+					if (/FROM review_history/.test(sql)) {
+						const ids = args.map(Number);
+						const rows = (seed.reviewHistory ?? []).filter((row) => ids.includes(row.installation_id));
+						return {
+							reviews: rows.length,
+							input_tokens: rows.reduce((sum, row) => sum + (row.input_tokens ?? 0), 0),
+							output_tokens: rows.reduce((sum, row) => sum + (row.output_tokens ?? 0), 0),
+						} as T;
+					}
 					return null;
 				},
 				async all<T>(): Promise<{ results: T[]; success: boolean; meta: unknown }> {
@@ -92,6 +114,36 @@ export function makeFakeDb(seed: FakeDbSeed = {}): FakeDb {
 					}
 					if (/FROM repos WHERE installation_id/.test(sql)) {
 						return result((seed.repos?.[Number(args[0])] ?? []) as T[]) as never;
+					}
+					if (/FROM review_history/.test(sql)) {
+						// Aggregate queries take only the installation ids; the list query
+						// takes the ids and then the limit as its final argument.
+						const ids = /GROUP BY|COUNT\(\*\)/.test(sql) ? args.map(Number) : args.slice(0, -1).map(Number);
+						const rows = (seed.reviewHistory ?? []).filter((row) => ids.includes(row.installation_id));
+						if (/GROUP BY model/.test(sql)) {
+							const groups = new Map<
+								string,
+								{ model: string | null; provider: string | null; reviews: number; input_tokens: number; output_tokens: number }
+							>();
+							for (const row of rows) {
+								const key = `${row.model ?? ''}|${row.provider ?? ''}`;
+								const group = groups.get(key) ?? {
+									model: row.model ?? null,
+									provider: row.provider ?? null,
+									reviews: 0,
+									input_tokens: 0,
+									output_tokens: 0,
+								};
+								group.reviews += 1;
+								group.input_tokens += row.input_tokens ?? 0;
+								group.output_tokens += row.output_tokens ?? 0;
+								groups.set(key, group);
+							}
+							return result([...groups.values()].sort((a, b) => b.reviews - a.reviews) as T[]) as never;
+						}
+						const limit = /LIMIT \?/.test(sql) ? Number(args[args.length - 1]) : rows.length;
+						const sorted = [...rows].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+						return result(sorted.slice(0, limit).map((row, index) => ({ id: row.id ?? index + 1, ...row })) as T[]) as never;
 					}
 					return result([]) as never;
 				},

@@ -168,9 +168,10 @@ pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0010_repos.sq
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0012_install_health.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0013_installation_key_hint.sql
 pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0014_review_tenant.sql
+pnpm wrangler d1 execute pr-agent-db --remote --file=db/migrations/0015_review_history.sql
 ```
 
-(There is no `0011` yet — it belongs to the review-history phase of [ADR 0002](docs/adr/0002-self-serve-dashboard.md), not to a skipped file.)
+(There is no `0011` — it belongs to the teams phase of [ADR 0002](docs/adr/0002-self-serve-dashboard.md), not to a skipped file.)
 
 ### 6. Deploy and connect
 
@@ -227,7 +228,7 @@ The configuration form is valid for ten minutes **and only in the browser that s
 
 Sign in at `/dashboard` with GitHub (`read:user` only — the token is used once to read your profile and installation list, then discarded). You get a read-only view of every installation you administer: which account it belongs to, your role on it (`admin` or `member · read-only`), the provider and model in force, whether a key is stored, the repository list with each repo's on/off state, the last review time, and any provider failure as a banner that quotes the error (for example `Key limit exceeded (total limit)`).
 
-Sessions are server-side rows in D1 with an opaque `HttpOnly` cookie, 30-day idle expiry and a hard seven-day cap, and CSRF tokens on every POST. A write from a session older than a day is sent back through GitHub first, so a role removed since you signed in is picked up before anything is changed. Administrators can open a repository and switch it off, or override its provider, model, severity threshold, tone and ignored paths; members see the same page read-only. An installation card also carries the provider key: a password field replaces it (the key is encrypted before it is stored, and only the last four characters are ever rendered as a hint) and a **Test provider** button makes one 16-token call so you find out your key is dead here rather than in a pull request. A switched-off repo is skipped silently — no comment, no check run. Review history is the next phase in [ADR 0002](docs/adr/0002-self-serve-dashboard.md).
+Sessions are server-side rows in D1 with an opaque `HttpOnly` cookie, 30-day idle expiry and a hard seven-day cap, and CSRF tokens on every POST. A write from a session older than a day is sent back through GitHub first, so a role removed since you signed in is picked up before anything is changed. Administrators can open a repository and switch it off, or override its provider, model, severity threshold, tone and ignored paths; members see the same page read-only. An installation card also carries the provider key: a password field replaces it (the key is encrypted before it is stored, and only the last four characters are ever rendered as a hint) and a **Test provider** button makes one 16-token call so you find out your key is dead here rather than in a pull request. A switched-off repo is skipped silently — no comment, no check run. Two more pages answer what the overview cannot: **/dashboard/reviews** lists every review AlphaPR posted, newest first, with the commit, the model and the tokens the provider reported; **/dashboard/usage** totals those tokens and estimates what they cost, per model, from a small static price table (`src/pricing.ts`). A model the table does not know shows tokens and no price rather than a guess, and the page says so — and that the review call is counted while the optional PR summary is not, which makes the figure a floor, not a ceiling. History starts with v1.11.0; earlier reviews still exist as per-PR memory but were never recorded as events.
 
 ### Running tests
 
