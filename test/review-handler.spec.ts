@@ -10,9 +10,12 @@ vi.mock('../src/crypto', () => ({
 }));
 
 vi.mock('../src/db', () => ({
-	getInstallation: vi.fn(),
 	getReviewState: vi.fn(),
 	saveReviewState: vi.fn(async () => undefined),
+}));
+
+vi.mock('../src/review-config', () => ({
+	loadRepoConfig: vi.fn(),
 }));
 
 vi.mock('../src/github/api', () => ({
@@ -26,8 +29,9 @@ vi.mock('../src/github/api', () => ({
 	markCheckRunRetrying: vi.fn(async () => undefined),
 }));
 
-import { getInstallation, getReviewState, saveReviewState } from '../src/db';
+import { getReviewState, saveReviewState } from '../src/db';
 import { completeCheckRun, editComment, getFailedCheckRuns } from '../src/github/api';
+import { loadRepoConfig } from '../src/review-config';
 import { handlePREvent, sanitizeDetail, surfaceFailure } from '../src/review-handler';
 import type { ReviewJob } from '../src/types';
 
@@ -56,7 +60,7 @@ const env = {
 	DB: {},
 } as unknown as Env;
 
-const mockedGetInstallation = vi.mocked(getInstallation);
+const mockedLoadRepoConfig = vi.mocked(loadRepoConfig);
 const mockedGetReviewState = vi.mocked(getReviewState);
 const mockedEditComment = vi.mocked(editComment);
 const mockedCompleteCheckRun = vi.mocked(completeCheckRun);
@@ -65,15 +69,23 @@ const mockedSaveReviewState = vi.mocked(saveReviewState);
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	mockedGetInstallation.mockResolvedValue({
-		installation_id: 1,
-		account_login: 'owner',
-		api_key_encrypted: 'encrypted',
-		model: 'deepseek/deepseek-v4-flash',
-		severity_threshold: 'all',
-		review_tone: 'thorough',
-		ignore_paths: '',
+	mockedLoadRepoConfig.mockResolvedValue({
+		accountLogin: 'owner',
+		apiKeyEncrypted: 'encrypted',
+		enabled: true,
 		provider: 'openrouter',
+		model: 'deepseek/deepseek-v4-flash',
+		severityThreshold: 'all',
+		reviewTone: 'thorough',
+		ignorePaths: [],
+		ignorePathsRaw: '',
+		inherits: {
+			provider: true,
+			model: true,
+			severityThreshold: true,
+			reviewTone: true,
+			ignorePaths: true,
+		},
 	});
 });
 

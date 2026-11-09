@@ -1,5 +1,5 @@
 import { decryptSecret } from './crypto';
-import { getInstallation, getReviewState, saveReviewState } from './db';
+import { getReviewState, saveReviewState } from './db';
 import { PermanentError } from './errors';
 import {
 	completeCheckRun,
@@ -17,6 +17,7 @@ import { type Finding, generateSummary, type ReviewResult, reviewDiff, summarize
 import { type Provider, parseProvider } from './review/provider-types';
 import { mergeSummaryIntoDescription, renderAnchoredComment, renderForMemory, renderSummary, sortFindings } from './review/render';
 import { formatUsage } from './review/usage';
+import { loadRepoConfig } from './review-config';
 import { isAlreadyReviewed } from './review-gate';
 import type { CheckConclusion, ReviewCommentInput, ReviewJob } from './types';
 
@@ -131,8 +132,8 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 	const jwt = await createAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
 	const token = await getInstallationToken(jwt, job.installationId);
 
-	// ─── BYOK: resolve per-installation key + model + config ───
-	const installation = await getInstallation(env.DB, job.installationId);
+	// ─── BYOK: resolve the key + model + config, repo overrides included ───
+	const installation = await loadRepoConfig(env.DB, job.installationId, job.owner, job.repo);
 
 	let apiKey: string;
 	let model: string;
@@ -141,9 +142,9 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 	let ignorePaths: string[] = [];
 	let provider: Provider = 'openrouter';
 
-	if (installation?.api_key_encrypted) {
+	if (installation?.apiKeyEncrypted) {
 		try {
-			apiKey = await decryptSecret(installation.api_key_encrypted, env.KEY_ENCRYPTION_SECRET);
+			apiKey = await decryptSecret(installation.apiKeyEncrypted, env.KEY_ENCRYPTION_SECRET);
 		} catch (err) {
 			throw new PermanentError(
 				`Failed to decrypt API key for installation ${job.installationId}: ${err instanceof Error ? err.message : err}`,
@@ -151,9 +152,9 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 			);
 		}
 		model = installation.model;
-		reviewTone = installation.review_tone === 'concise' ? 'concise' : 'thorough';
-		severityThreshold = installation.severity_threshold;
-		ignorePaths = installation.ignore_paths ? installation.ignore_paths.split(',') : [];
+		reviewTone = installation.reviewTone;
+		severityThreshold = installation.severityThreshold;
+		ignorePaths = installation.ignorePaths;
 		provider = parseProvider(installation.provider);
 	} else if (job.owner === env.FALLBACK_OWNER) {
 		apiKey = env.OPENROUTER_API_KEY;

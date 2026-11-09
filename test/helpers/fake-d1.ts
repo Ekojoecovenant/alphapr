@@ -16,6 +16,10 @@ export interface FakeDbSeed {
 	installations?: Array<Record<string, unknown>>;
 	/** Repo override rows, keyed by installation id. */
 	repos?: Record<number, Array<{ owner: string; name: string; enabled: number }>>;
+	/** The `installations` row a review resolves its defaults from. */
+	installationConfig?: Record<string, unknown> | null;
+	/** A single repo override row, keyed `"<installationId>:<owner>/<name>"`. */
+	repoOverrides?: Record<string, Record<string, unknown>>;
 }
 
 export interface FakeDb {
@@ -43,6 +47,13 @@ export function makeFakeDb(seed: FakeDbSeed = {}): FakeDb {
 						const id = String(args[0]);
 						const row = (seed.sessions ?? []).find((s) => s.session_id === id && !isExpired(s.expires_at));
 						return (row as T) ?? null;
+					}
+					if (/FROM installations WHERE installation_id/.test(sql)) {
+						return (seed.installationConfig as T) ?? null;
+					}
+					if (/FROM repos\s+WHERE installation_id = \? AND owner = \? AND name = \?/.test(sql)) {
+						const key = `${Number(args[0])}:${String(args[1])}/${String(args[2])}`;
+						return ((seed.repoOverrides ?? {})[key] as T) ?? null;
 					}
 					return null;
 				},
