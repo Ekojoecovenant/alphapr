@@ -20,17 +20,19 @@ function makeEnv(db: D1Database): Env {
 	} as unknown as Env;
 }
 
-async function makeDb(role: 'admin' | 'member', storedKey: string | null, changes = 1) {
+async function makeDb(role: 'admin' | 'member', storedKey: string | null, changes = 1, installation = true) {
 	return makeFakeDb({
 		sessions: [{ session_id: 'sid', last_used_at: null, expires_at: FUTURE, github_id: 4242, login: 'ekojoe', avatar_url: null }],
 		access: { '4242:12': { role, account_login: 'acme', account_type: 'Organization' } },
 		changes,
-		installationConfig: {
-			provider: 'openrouter',
-			model: 'deepseek/deepseek-v4-flash-0731',
-			api_key_encrypted: storedKey,
-			key_hint: storedKey ? '…wxyz' : null,
-		},
+		installationConfig: !installation
+			? undefined
+			: {
+					provider: 'openrouter',
+					model: 'deepseek/deepseek-v4-flash-0731',
+					api_key_encrypted: storedKey,
+					key_hint: storedKey ? '…wxyz' : null,
+				},
 	});
 }
 
@@ -62,12 +64,13 @@ describe('POST /dashboard/installations/:id/key', () => {
 		expect(write.args[2]).toBe(12);
 	});
 
-	it('reports a missing installation instead of claiming the key was saved', async () => {
-		const { db } = await makeDb('admin', null, 0);
+	it('does not claim the key was saved when no installation row exists', async () => {
+		const { db } = await makeDb('admin', null, 0, false);
 		const res = await handleDashboard(request('/dashboard/installations/12/key', { csrf: await csrf(), api_key: STORED_KEY }), makeEnv(db));
 
 		expect(res?.status).toBe(404);
-		expect(await res?.text()).toContain('no longer exists');
+		// The lie to avoid is a redirect with `saved=key` for a row that is gone.
+		expect(res?.headers.get('Location')).toBeNull();
 	});
 
 	it('refuses a value too short to be a key', async () => {

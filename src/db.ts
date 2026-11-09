@@ -105,7 +105,17 @@ export async function setInstallationKey(
 		.bind(apiKeyEncrypted, keyHint, installationId)
 		.run();
 
-	// An UPDATE that matched nothing is not a success: the row was deleted or the
-	// id was never ours, and telling the user "saved" would be a quiet lie.
-	return (result.meta?.changes ?? 0) > 0;
+	// `changes` alone cannot answer "did this row exist": a provider can be told
+	// to store a key it already had, and the count is then zero even though the
+	// update matched. So a zero count is followed by one existence check rather
+	// than turned into a 404 that would be wrong.
+	const changes = result.meta?.changes ?? 0;
+	if (changes > 0) return true;
+
+	const row = await db
+		.prepare('SELECT 1 AS present FROM installations WHERE installation_id = ?')
+		.bind(installationId)
+		.first<{ present: number }>();
+
+	return row !== null;
 }

@@ -143,7 +143,11 @@ export default {
 			return new Response('payload too large', { status: 413 });
 		}
 		const rawBody = await request.text();
-		if (rawBody.length > MAX_WEBHOOK_BYTES) {
+		// `string.length` counts UTF-16 code units, and a code unit can encode to
+		// three UTF-8 bytes — so a payload full of non-ASCII text can exceed the
+		// byte cap while looking short. Only the near-limit bodies pay for the
+		// exact count; anything under a third of the cap is safely under it.
+		if (rawBody.length > MAX_WEBHOOK_BYTES / 3 && new TextEncoder().encode(rawBody).byteLength > MAX_WEBHOOK_BYTES) {
 			return new Response('payload too large', { status: 413 });
 		}
 
