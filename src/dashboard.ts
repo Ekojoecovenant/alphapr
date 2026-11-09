@@ -4,7 +4,10 @@
 //
 // Authorization rule: reading needs any role, writing needs `admin` — the same
 // rule `getAuthorizedInstallations` already applies at sign-in (own install or
-// org admin). CSRF is a double-submit token bound to the session.
+// org admin). Sign-in only stores those, and `loadInstallations` still filters
+// on `role = 'admin'`, so an installation where the user merely has access to a
+// single repository never reaches the page. CSRF is a double-submit token bound
+// to the session.
 
 import { csrfToken, getSessionUser, sessionCookie, verifyCsrf } from './auth';
 import { decryptSecret, encryptSecret } from './crypto';
@@ -81,7 +84,7 @@ async function loadInstallations(env: Env, userId: number): Promise<DashboardIns
             i.last_error_code, i.last_error_message, i.last_error_at, i.last_review_at
      FROM user_installations ui
      LEFT JOIN installations i ON i.installation_id = ui.installation_id
-     WHERE ui.user_id = ?
+     WHERE ui.user_id = ? AND ui.role = 'admin'
      ORDER BY ui.account_login COLLATE NOCASE`,
 	)
 		.bind(userId)
