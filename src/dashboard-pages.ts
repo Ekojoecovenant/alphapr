@@ -26,12 +26,31 @@ export interface DashboardInstallation {
 	lastReviewAt: string | null;
 	repos: DashboardRepo[];
 	reposError: string | null;
+	members: { login: string; addedBy: string; createdAt: string }[];
 }
 
 export interface DashboardData {
 	user: SessionUser;
 	csrf: string;
 	installations: DashboardInstallation[];
+	/** Set by the redirect after a write, so the page can say what happened. */
+	saved?: 'key' | 'member-added' | 'member-exists' | 'member-removed' | null;
+}
+
+function savedBanner(saved: DashboardData['saved']): string {
+	if (!saved) return '';
+	const [title, detail] =
+		saved === 'key'
+			? ['Key replaced.', 'The old failure, if there was one, is cleared. Test it above before the next pull request finds out for you.']
+			: saved === 'member-added'
+				? ['Teammate added.', 'They get read-only access the next time they sign in with GitHub — nothing is emailed.']
+				: saved === 'member-exists'
+					? ['Already on the list.', 'That login already has read-only access, so nothing changed.']
+					: [
+							'Teammate removed.',
+							'Their read-only access ends on their next sign-in: the grant is re-checked against this list every time.',
+						];
+	return `<div class="dash-alert is-ok" role="status"><h2>${esc(title)}</h2><p>${esc(detail)}</p></div>`;
 }
 
 function installLink(): string {
@@ -102,6 +121,39 @@ function installationCard(installation: DashboardInstallation, csrf: string): st
 	const role = installation.role === 'admin' ? 'admin' : 'member · read-only';
 	const admin = installation.role === 'admin';
 	const keyState = installation.hasKey ? `replace key ${installation.keyHint ?? '…'}` : 'paste the provider key';
+
+	// Teammates: the point of a read-only role is that the bar for writing stays
+	// where it belongs. An invite is a login, applied on that person's next
+	// sign-in, and withdrawn as soon as their GitHub access to the account goes.
+	const teammateRows = installation.members
+		.map(
+			(member) => `<li class="member">
+        <span class="member-name">@${esc(member.login)}</span>
+        <span class="badge">read-only</span>
+        <span class="kicker">invited by @${esc(member.addedBy)}</span>
+        <form method="POST" action="/dashboard/installations/${installation.id}/members">
+          <input type="hidden" name="csrf" value="${esc(csrf)}">
+          <input type="hidden" name="action" value="remove">
+          <input type="hidden" name="login" value="${esc(member.login)}">
+          <button class="btn btn-ghost" type="submit"${admin ? '' : ' disabled'}>Remove</button>
+        </form>
+      </li>`,
+		)
+		.join('');
+
+	const teammates = `<div class="inst-team">
+      <h3 class="kicker">Teammates</h3>
+      <p class="field-help">Read-only access for people who push to these repositories but do not administer the account. They sign in with GitHub like everyone else; nothing is emailed and no seat is reserved.</p>
+      ${installation.members.length > 0 ? `<ul class="member-list">${teammateRows}</ul>` : ''}
+      <form method="POST" action="/dashboard/installations/${installation.id}/members" class="member-add">
+        <input type="hidden" name="csrf" value="${esc(csrf)}">
+        <input type="hidden" name="action" value="add">
+        <label class="kicker" for="member-${installation.id}">GitHub login</label>
+        <input id="member-${installation.id}" name="login" placeholder="octocat" autocomplete="off" spellcheck="false"${admin ? '' : ' disabled'}>
+        <button class="btn btn-ghost" type="submit"${admin ? '' : ' disabled'}>Add teammate</button>
+      </form>
+    </div>`;
+
 	const keyTools = `<div class="inst-tools">
       <form method="POST" action="/dashboard/installations/${installation.id}/key">
         <input type="hidden" name="csrf" value="${esc(csrf)}">
@@ -131,6 +183,7 @@ function installationCard(installation: DashboardInstallation, csrf: string): st
       <span>repos <b>${installation.repos.length}</b></span>
     </div>
     ${keyTools}
+    ${teammates}
     ${repos}
   </article>`;
 }
@@ -172,6 +225,7 @@ export function dashboardPage(data: DashboardData): string {
         <p class="lede">${installations.length} installation${installations.length === 1 ? '' : 's'}, ${repoCount} repositor${repoCount === 1 ? 'y' : 'ies'}, ${enabledCount} being reviewed. Open a repository to switch it off or override its provider, model, severity, tone or ignored paths. The installation-wide defaults still live on <a href="/setup">/setup</a>.</p>
       </header>
       ${errorBanner(installations)}
+      ${savedBanner(data.saved)}
       ${body}
     </div></div>`,
 		{ signedIn: true, login: user.login, csrf },

@@ -12,7 +12,16 @@
 import { csrfToken, getSessionUser, sessionCookie, sessionIsStale, stepUpResponse, verifyCsrf } from './auth';
 import { decryptSecret, encryptSecret } from './crypto';
 import { type DashboardInstallation, dashboardPage, repoSettingsPage, reviewsPage, signInPage, usagePage } from './dashboard-pages';
-import { countReviewHistory, listReviewHistory, loadUsageByModel, loadUsageTotals, setInstallationKey } from './db';
+import {
+	addMember,
+	countReviewHistory,
+	listMembers,
+	listReviewHistory,
+	loadUsageByModel,
+	loadUsageTotals,
+	removeMember,
+	setInstallationKey,
+} from './db';
 import { createAppJWT, getInstallationToken } from './github/auth';
 import { estimateCost, PRICING_AS_OF } from './pricing';
 import { parseProvider } from './review/provider-types';
@@ -86,7 +95,7 @@ async function loadInstallations(env: Env, userId: number): Promise<DashboardIns
             i.last_error_code, i.last_error_message, i.last_error_at, i.last_review_at
      FROM user_installations ui
      LEFT JOIN installations i ON i.installation_id = ui.installation_id
-     WHERE ui.user_id = ? AND ui.role = 'admin'
+     WHERE ui.user_id = ? AND ui.role IN ('admin', 'member')
      ORDER BY ui.account_login COLLATE NOCASE`,
 	)
 		.bind(userId)
@@ -143,6 +152,13 @@ async function loadInstallations(env: Env, userId: number): Promise<DashboardIns
 				}))
 				.sort((a, b) => a.fullName.localeCompare(b.fullName)),
 			reposError,
+			// Members see the team too: knowing who else can look is not a
+			// privilege escalation, and the controls render disabled for them.
+			members: (await listMembers(env.DB, row.installation_id)).map((member) => ({
+				login: member.github_login,
+				addedBy: member.added_by,
+				createdAt: member.created_at,
+			})),
 		});
 	}
 
@@ -327,6 +343,7 @@ async function handleInstallationRoute(request: Request, env: Env, installationI
 
 	const access = await accessFor(env, user.githubId, installationId);
 	if (!access) return messagePage('Not found', 'That installation is not one you can see.', 404);
+
 	// The router already answers 405 for every method but POST; the check is
 	// spelled out anyway so this reads as a write gate without tracing the router.
 	if (request.method === 'POST' && sessionIsStale(user)) return stepUpResponse(request);
@@ -470,12 +487,69 @@ async function handleHistoryRoute(request: Request, env: Env, pathname: string):
 	return response;
 }
 
+const MEMBERS_ROUTE = /^\/dashboard\/installations\/(\d+)\/members$/;
+
+/**
+ * P3: read-only teammates. The invite is a GitHub login; the row is created
+ * here and materialised as a `user_installations` grant on that person's next
+ * sign-in. Adding requires admin and CSRF like every other write, and the
+ * login has to look like a GitHub login before it is stored — a typo would
+ * otherwise be a permanent inert invite.
+ */
+async function handleMembersRoute(request: Request, env: Env, installationId: number): Promise<Response> {
+	const user = await getSessionUser(request, env);
+	if (!user) return html(signInPage());
+
+	const access = await accessFor(env, user.githubId, installationId);
+	if (!access) return messagePage('Not found', 'That installation is not one you can see.', 404);
+
+	// Same step-up as the other write routes: a stale session goes back through
+	// GitHub before it can change who has access.
+	if (sessionIsStale(user)) return stepUpResponse(request);
+
+	const form = await request.formData().catch(() => null);
+	if (!form) return messagePage('Not saved', 'The form could not be read. Try again.', 400);
+	if (!(await verifyCsrf(request, user.sessionId, env.SETUP_SIGNING_SECRET, form))) {
+		return messagePage('Not saved', 'That request did not come from this dashboard. Reload and try again.', 403);
+	}
+	if (access.role !== 'admin') {
+		return messagePage('Read-only', 'Your role on this installation is member, so you cannot change its team.', 403);
+	}
+
+	const action = String(form.get('action') ?? '');
+	const login = String(form.get('login') ?? '')
+		.trim()
+		.replace(/^@/, '');
+	if (!/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(login)) {
+		return messagePage('Not saved', 'That is not a GitHub login. It is letters, digits and single hyphens.', 400);
+	}
+
+	if (action === 'remove') {
+		await removeMember(env.DB, installationId, login);
+		return redirect(`/dashboard?saved=member-removed`);
+	}
+	if (action !== 'add') {
+		return messagePage('Not saved', 'Unknown action.', 400);
+	}
+
+	const created = await addMember(env.DB, installationId, login, user.login);
+	return redirect(`/dashboard?saved=${created ? 'member-added' : 'member-exists'}`);
+}
+
 /** Route handler for /dashboard*, or null for anything else. */
 export async function handleDashboard(request: Request, env: Env): Promise<Response | null> {
 	const { pathname } = new URL(request.url);
 
 	if (HISTORY_ROUTES.has(pathname)) {
 		return handleHistoryRoute(request, env, pathname);
+	}
+
+	const membersMatch = MEMBERS_ROUTE.exec(pathname);
+	if (membersMatch) {
+		if (request.method !== 'POST') {
+			return new Response('method not allowed', { status: 405, headers: { Allow: 'POST' } });
+		}
+		return handleMembersRoute(request, env, Number(membersMatch[1]));
 	}
 
 	const repoMatch = REPO_ROUTE.exec(pathname);
@@ -522,7 +596,15 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
 		);
 	}
 
-	const response = html(dashboardPage({ user, csrf, installations }));
+	const saved = new URL(request.url).searchParams.get('saved');
+	const response = html(
+		dashboardPage({
+			user,
+			csrf,
+			installations,
+			saved: saved === 'key' || saved === 'member-added' || saved === 'member-exists' || saved === 'member-removed' ? saved : null,
+		}),
+	);
 	response.headers.append('Set-Cookie', sessionCookie(request, user.sessionId));
 	return response;
 }

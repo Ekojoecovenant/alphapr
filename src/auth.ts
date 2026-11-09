@@ -4,6 +4,7 @@
 // then dropped. Auth tokens stay inside the worker, where they are bound to an
 // installation and expire on their own.
 
+import { invitedInstallations } from './db';
 import { htmlHeaders } from './security';
 import { getAuthorizedInstallations, hmacSign, hmacVerify, randomHex } from './setup';
 
@@ -295,13 +296,28 @@ export async function handleAuth(request: Request, env: Env): Promise<Response |
 		await env.DB.prepare(`DELETE FROM user_installations WHERE user_id = ?`).bind(me.id).run();
 		for (const installation of authorized) {
 			await env.DB.prepare(
-				`INSERT INTO user_installations (user_id, installation_id, account_login, account_type, role)
+				`INSERT OR IGNORE INTO user_installations (user_id, installation_id, account_login, account_type, role)
          VALUES (?, ?, ?, ?, ?)`,
 			)
 				.bind(me.id, installation.id, installation.account.login, installation.account.type, 'admin')
 				.run();
 		}
 
+		// Explicitly invited teammates get a read-only row — but only for
+		// installations GitHub still lists for them, so losing repo access on
+		// GitHub removes the view on the next sign-in without this code having
+		// to know anything about teams or repo permissions.
+		const adminIds = new Set(authorized.map((installation) => installation.id));
+		const invited = new Set(await invitedInstallations(env.DB, me.login));
+		for (const installation of installations) {
+			if (!invited.has(installation.id) || adminIds.has(installation.id)) continue;
+			await env.DB.prepare(
+				`INSERT OR IGNORE INTO user_installations (user_id, installation_id, account_login, account_type, role)
+         VALUES (?, ?, ?, ?, ?)`,
+			)
+				.bind(me.id, installation.id, installation.account.login, installation.account.type, 'member')
+				.run();
+		}
 		const sessionId = await createSession(env, me.id);
 
 		const next = safeNextPath(readCookie(request, NEXT_COOKIE)) ?? '/dashboard';
