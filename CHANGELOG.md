@@ -3,6 +3,23 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.10.0] — 2026-11-09
+
+Phase P1 is complete: the dashboard can now do everything the setup form could, and one thing it could not.
+
+### Added
+
+- **Replace the provider key from the dashboard.** Each installation card carries a password input and a Save button (`POST /dashboard/installations/:id/key`). The key is encrypted before it is stored, the plaintext never round-trips, and only a four-character hint (`…wxyz`, new `installations.key_hint` in `db/migrations/0013_installation_key_hint.sql`) is ever rendered. Saving a key also clears the stored failure, because a new key is a new attempt
+- **Test the provider** (`POST /dashboard/installations/:id/test`): one 16-token call with the stored key and model, answered on the page as "openrouter answered in 812 ms using deepseek/… — replied ok", or as a refusal quoting what the provider said. This is the check that would have caught the exhausted-key incident in one click instead of `wrangler tail`
+- Both writes are admin-only and CSRF-checked, like every other write on the dashboard; members see the controls disabled
+
+### Notes
+
+- The ADR described this step as a "test review" of the newest open PR. What shipped is a connection test instead: it needs no PR payload, cannot post comments on someone's branch, and answers the question people actually have ("is my key working?"). Recorded as a narrowing in `docs/adr/0002-self-serve-dashboard.md`
+
+### Tests
+
+- 256 passing (was 249): seven in `test/dashboard-installation.spec.ts` — ciphertext stored with a four-char hint and no plaintext in the row, short key refused, member refused, missing CSRF refused, provider answered, provider refused, and no-key-to-test
 ## [v1.9.1] — 2026-11-09
 
 Patch release: the five findings AlphaPR raised against its own PRs #46 and #49, fixed.

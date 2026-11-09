@@ -20,6 +20,7 @@ export interface DashboardInstallation {
 	provider: string | null;
 	model: string | null;
 	hasKey: boolean;
+	keyHint: string | null;
 	lastError: { code: string | null; message: string | null; at: string | null } | null;
 	lastReviewAt: string | null;
 	repos: DashboardRepo[];
@@ -91,13 +92,28 @@ function repoRow(repo: DashboardRepo, installationId: number, role: 'admin' | 'm
   </li>`;
 }
 
-function installationCard(installation: DashboardInstallation): string {
+function installationCard(installation: DashboardInstallation, csrf: string): string {
 	const repos =
 		installation.repos.length > 0
 			? `<ul class="repo-list">${installation.repos.map((repo) => repoRow(repo, installation.id, installation.role)).join('')}</ul>`
 			: `<p class="inst-empty">${installation.reposError ? esc(installation.reposError) : 'No repositories are visible to this installation yet.'}</p>`;
 
 	const role = installation.role === 'admin' ? 'admin' : 'member · read-only';
+	const admin = installation.role === 'admin';
+	const keyState = installation.hasKey ? `replace key ${installation.keyHint ?? '…'}` : 'paste the provider key';
+	const keyTools = `<div class="inst-tools">
+      <form method="POST" action="/dashboard/installations/${installation.id}/key">
+        <input type="hidden" name="csrf" value="${esc(csrf)}">
+        <label class="kicker" for="key-${installation.id}">Provider key</label>
+        <input id="key-${installation.id}" name="api_key" type="password" autocomplete="off" spellcheck="false" placeholder="${esc(keyState)}"${admin ? '' : ' disabled'}>
+        <button class="btn btn-ghost" type="submit"${admin ? '' : ' disabled'}>Save key</button>
+      </form>
+      <form method="POST" action="/dashboard/installations/${installation.id}/test">
+        <input type="hidden" name="csrf" value="${esc(csrf)}">
+        <button class="btn btn-ghost" type="submit"${admin && installation.hasKey ? '' : ' disabled'}>Test provider</button>
+        <span class="field-help">One tiny call, so you find out here rather than in a pull request.</span>
+      </form>
+    </div>`;
 
 	return `<article class="inst">
     <div class="inst-head">
@@ -113,6 +129,7 @@ function installationCard(installation: DashboardInstallation): string {
       <span>last review <b>${esc(installation.lastReviewAt ?? 'never')}</b></span>
       <span>repos <b>${installation.repos.length}</b></span>
     </div>
+    ${keyTools}
     ${repos}
   </article>`;
 }
@@ -142,7 +159,7 @@ export function dashboardPage(data: DashboardData): string {
           <p class="muted">Your GitHub account is signed in, but AlphaPR has not been installed on an account you can see. Install it first, then reload this page.</p>
           <div class="actions">${installLink()}<a class="btn btn-ghost" href="/dashboard">Reload</a></div>
         </div>`
-			: installations.map(installationCard).join('');
+			: installations.map((installation) => installationCard(installation, csrf)).join('');
 
 	return shell(
 		'Dashboard',

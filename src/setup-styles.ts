@@ -383,6 +383,15 @@ a.repo-name:hover { border-bottom-color: var(--line-strong); }
 .repo-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
 .repo-dot.is-off { background: var(--line-strong); }
 .inst-empty { font-size: 13px; color: var(--ink-3); margin-top: 14px; }
+.inst-tools { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: flex-end; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.inst-tools form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.inst-tools .kicker { width: 100%; }
+.inst-tools input[type="password"] {
+  flex: 1 1 220px; min-width: 160px; padding: 9px 11px; font: inherit; font-size: 13px;
+  color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 10px;
+}
+.inst-tools input[type="password"]:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+.inst-tools .field-help { flex-basis: 100%; margin: 2px 0 0; }
 @media (max-width: 620px) {
   .inst { padding: 18px 16px; }
   .user-strip .who { width: 100%; }
