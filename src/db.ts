@@ -191,6 +191,22 @@ export async function loadUsageByModel(db: D1Database, installationIds: number[]
 	}));
 }
 
+/**
+ * How many review events exist, so a capped list can say what it is capped
+ * from. Counted from the same table and the same installation set as
+ * `listReviewHistory` — a token-summing aggregate would answer a different
+ * question and go wrong the moment a review records no usage.
+ */
+export async function countReviewHistory(db: D1Database, installationIds: number[]): Promise<number> {
+	if (installationIds.length === 0) return 0;
+	const { placeholders, ids } = idList(installationIds);
+	const row = await db
+		.prepare(`SELECT COUNT(*) AS reviews FROM review_history WHERE installation_id IN (${placeholders})`)
+		.bind(...ids)
+		.first<{ reviews: number }>();
+	return row?.reviews ?? 0;
+}
+
 export async function upsertInstallation(db: D1Database, installationId: number, accountLogin: string): Promise<void> {
 	await db
 		.prepare(

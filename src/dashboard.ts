@@ -12,7 +12,7 @@
 import { csrfToken, getSessionUser, sessionCookie, sessionIsStale, stepUpResponse, verifyCsrf } from './auth';
 import { decryptSecret, encryptSecret } from './crypto';
 import { type DashboardInstallation, dashboardPage, repoSettingsPage, reviewsPage, signInPage, usagePage } from './dashboard-pages';
-import { listReviewHistory, loadUsageByModel, loadUsageTotals, setInstallationKey } from './db';
+import { countReviewHistory, listReviewHistory, loadUsageByModel, loadUsageTotals, setInstallationKey } from './db';
 import { createAppJWT, getInstallationToken } from './github/auth';
 import { estimateCost, PRICING_AS_OF } from './pricing';
 import { parseProvider } from './review/provider-types';
@@ -426,7 +426,7 @@ async function handleHistoryRoute(request: Request, env: Env, pathname: string):
 						user,
 						csrf,
 						installations: ids.length,
-						total: (await loadUsageTotals(env.DB, ids)).reviews,
+						total: await countReviewHistory(env.DB, ids),
 						rows: (await listReviewHistory(env.DB, ids, 50)).map((row) => ({
 							repoFullName: row.repo_full_name,
 							prNumber: row.pr_number,

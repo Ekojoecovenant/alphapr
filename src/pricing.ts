@@ -38,12 +38,14 @@ function withoutVendor(id: string): string {
 
 const VERSION_SUFFIX = /^-(?:\d{4}-\d{2}-\d{2}|\d{8}|\d{6}|latest|preview|v\d+)$/;
 
+/** Longest first, so `gpt-4o-mini` is tested before `gpt-4o`. Built once. */
+const KNOWN_MODELS = Object.keys(PRICES).sort((a, b) => b.length - a.length);
+
 /** Null when the model is not in the table — the caller must not invent a price. */
 export function priceFor(model: string | null): Price | null {
 	if (!model) return null;
 	const id = withoutVendor(model.toLowerCase().trim());
-	// Longest first, so `gpt-4o-mini` is tested before `gpt-4o`.
-	for (const name of Object.keys(PRICES).sort((a, b) => b.length - a.length)) {
+	for (const name of KNOWN_MODELS) {
 		if (id === name) return PRICES[name] ?? null;
 		if (id.startsWith(name) && VERSION_SUFFIX.test(id.slice(name.length))) return PRICES[name] ?? null;
 	}

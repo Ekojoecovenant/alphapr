@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SESSION_COOKIE } from '../src/auth';
 import { handleDashboard } from '../src/dashboard';
-import { listReviewHistory, loadUsageByModel, loadUsageTotals, recordReview } from '../src/db';
+import { countReviewHistory, listReviewHistory, loadUsageByModel, loadUsageTotals, recordReview } from '../src/db';
 import { estimateCost, formatUsd, priceFor } from '../src/pricing';
 import { type FakeDbSeed, makeFakeDb } from './helpers/fake-d1';
 
@@ -161,6 +161,26 @@ describe('reading history', () => {
 		expect(await loadUsageTotals(fake.db, [])).toEqual({ reviews: 0, inputTokens: 0, outputTokens: 0 });
 	});
 
+	it('counts every event, including the ones that recorded no tokens', async () => {
+		// The count backs "showing 50 of N", so it must count rows, not priced rows.
+		const fake = makeFakeDb({
+			reviewHistory: [
+				...rows,
+				{
+					installation_id: 12,
+					repo_full_name: 'acme/api',
+					pr_number: 9,
+					head_sha: 'ddd',
+					created_at: '2026-11-09 13:00:00',
+					input_tokens: null,
+					output_tokens: null,
+				},
+			],
+		});
+		expect(await countReviewHistory(fake.db, [12])).toBe(3);
+		expect(await countReviewHistory(fake.db, [])).toBe(0);
+	});
+
 	it('groups usage by model so an unpriced model stays visible', async () => {
 		const fake = makeFakeDb({
 			reviewHistory: [
@@ -261,7 +281,7 @@ describe('GET /dashboard/reviews', () => {
 		expect(html).toContain('2026-11-09 16:04 UTC');
 		expect(html).toContain('abcdef1');
 		expect(html).toContain('Reviews');
-		expect(html).toContain('openai');
+		expect(html).toContain(' · openai');
 		expect(html).toContain('2 recorded reviews.');
 	});
 
