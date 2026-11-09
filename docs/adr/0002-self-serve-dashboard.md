@@ -213,12 +213,21 @@ a repo off suppresses the review *silently* — no status comment, no check run 
 an announcement, which is the one place this ADR's original wording was changed by decision rather than by
 constraint); a member can read every page the installation admin can and write none of them.
 
-**P2 — history + usage (~1 PR).**
+**P2 — history + usage (~1 PR). ✅ Shipped in v1.11.0 (PR #60).**
 `/dashboard/reviews` and `/dashboard/usage`; per-review token cost rendered with the model's price table
 (config file, not an API call). Acceptance: recent reviews are browsable with their token counts, and the
 usage page matches D1. (The original sketch also promised a backfill of `installation_id` on existing
 rows; migration `0014` already re-keyed the table, and pre-existing memory is deliberately unattributed,
 so there is nothing left to backfill — see "Narrowing recorded after P1".)
+
+Deviations recorded after P2 shipped (2026-11-09): `pr_reviews` could not serve as the history — it holds
+one overwritten row per pull request — so `0015` adds a `review_history` table with one row per posted
+review, written after the review has already been posted and never allowed to fail the job. `/dashboard/usage`
+reports the review call only; the optional PR summary call is not counted, and the page says so, which
+makes the figure a floor. Pricing is a four-entry static table (`src/pricing.ts`) that prices a model only
+when the id *is* that model or that model plus a version suffix, and returns `null` otherwise: a community
+fine-tune whose name contains a known model is a different product at a different price, and a review with
+only one of its two token counts recorded is not priced at all rather than being costed with a zero.
 
 **P3 — teams (~1 PR).**
 Roles: owner/admin (from GitHub), member (read-only), plus an explicit `members` table so a
