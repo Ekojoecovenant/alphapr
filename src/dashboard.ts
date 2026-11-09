@@ -344,9 +344,6 @@ async function handleInstallationRoute(request: Request, env: Env, installationI
 	const access = await accessFor(env, user.githubId, installationId);
 	if (!access) return messagePage('Not found', 'That installation is not one you can see.', 404);
 
-	// Same step-up as the other write routes: a stale session goes back through
-	// GitHub before it can change who has access.
-	if (sessionIsStale(user)) return stepUpResponse(request);
 	// The router already answers 405 for every method but POST; the check is
 	// spelled out anyway so this reads as a write gate without tracing the router.
 	if (request.method === 'POST' && sessionIsStale(user)) return stepUpResponse(request);
