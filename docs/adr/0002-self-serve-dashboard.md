@@ -271,3 +271,26 @@ Answered by the owner on 2026-11-08 ("all your recommendations"):
    GitHub shows up on refresh instead of waiting for a re-snapshot.
 3. Is the dashboard the home of the agentic toolbox (ADR 0001)? — **Same shell, separate route**, so
    it inherits sign-in and the CSRF/session machinery for free.
+
+## Audit follow-ups: closed, and deliberately deferred (2026-11-09)
+
+The Cloudflare security-audit run against this app produced seven Tier 1 findings and a longer Tier 2
+list. Everything in Tier 1 was shipped in v1.10.3-v1.10.6. Of the Tier 2 items, these are closed:
+
+- **Uninstall now removes what hung off the installation** (grants, per-repo overrides, review memory),
+  not just the `installations` row. Done in `deleteInstallation` rather than with a foreign key,
+  because a user can sign in before the webhook that creates the installation row exists - an FK would
+  reject that legitimate grant.
+- **`/setup` edits a named installation.** `?installation=<id>` selects it; an unrecognised value
+  falls back to the first authorized installation instead of silently showing someone else's config.
+- **Provider error text is capped, `finish_reason=length` is named, and the check-run pager only
+  follows `api.github.com` links** - see the v1.10.6 entry in the changelog.
+
+These stay open on purpose, with the reason recorded so they are decisions rather than omissions:
+
+| Item | Why it is not closed yet |
+| --- | --- |
+| `kid` + AAD in the ciphertext envelope | Changing the format means a migration for every stored key, and a rotation story that needs a second secret bound at deploy time. Worth a dedicated PR, not a hardening pass. |
+| `__Host-` cookie prefix | Requires `Secure` unconditionally, which breaks `wrangler dev` over plain http. The cookies are already `HttpOnly`/`SameSite=Lax`/`Secure` in production. |
+| Rate limiting | Every review is already bounded by Queues retries (2), the DLQ drain, and the free-tier budget; the remaining exposure is unauthenticated webhook bodies, now capped at 20 MB before they are read. |
+| `redirect_uri` from the request host | GitHub validates the redirect against the App's registered callback URLs, so a poisoned `Host` produces a rejected redirect rather than a token leak. |

@@ -68,7 +68,19 @@ export async function upsertInstallation(db: D1Database, installationId: number,
 		.run();
 }
 
+/**
+ * Remove an installation and everything that hung off it.
+ *
+ * There is deliberately no foreign key from `user_installations` to
+ * `installations`: a user can sign in before the webhook that creates the
+ * installation row has arrived, and the grant has to be storable at that point.
+ * The cleanup therefore lives here, where the uninstall actually happens.
+ */
 export async function deleteInstallation(db: D1Database, installationId: number): Promise<void> {
+	await db.prepare(`DELETE FROM user_installations WHERE installation_id = ?`).bind(installationId).run();
+	// Memory before the rows it describes, so no delete ordering can strand it.
+	await db.prepare(`DELETE FROM pr_reviews WHERE installation_id = ?`).bind(installationId).run();
+	await db.prepare(`DELETE FROM repos WHERE installation_id = ?`).bind(installationId).run();
 	await db.prepare(`DELETE FROM installations WHERE installation_id = ?`).bind(installationId).run();
 }
 
