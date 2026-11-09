@@ -89,10 +89,19 @@ CREATE TABLE sessions (
   last_used_at TEXT
 );
 
--- 0010_repos.sql
-ALTER TABLE installations ADD COLUMN owner_user_id INTEGER;  -- backfilled on first sign-in
-ALTER TABLE installations ADD COLUMN account_type TEXT;      -- 'User' | 'Organization'
+-- Which installations this person may see, and in what role. Written at sign-in
+-- from the OAuth token's installation list; see "Deviation after P0" below.
+CREATE TABLE user_installations (
+  user_id         INTEGER NOT NULL REFERENCES users(github_id) ON DELETE CASCADE,
+  installation_id INTEGER NOT NULL,
+  account_login   TEXT NOT NULL,
+  account_type    TEXT NOT NULL DEFAULT 'User',
+  role            TEXT NOT NULL CHECK (role IN ('admin', 'member')),
+  seen_at         TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, installation_id)
+);
 
+-- 0010_repos.sql
 CREATE TABLE repos (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   installation_id INTEGER NOT NULL REFERENCES installations(installation_id) ON DELETE CASCADE,
@@ -128,6 +137,24 @@ Two rules that keep this honest:
 - **Per-repo settings are overrides, not copies.** `NULL` means inherit, so changing the org default
   still moves every repo that never overrode it.
 
+#### Deviation recorded after P0 shipped (2026-11-08)
+
+Two changes to the sketch above, both made because the original design quietly required storing a
+user's GitHub token:
+
+1. **`user_installations` exists.** Answering "which installations can this person see, and as what"
+   needs the OAuth token's `/user/installations` list. Rather than persist that token (a standing
+   credential, revocable at any moment, and a second thing to encrypt), the answer is snapshotted at
+   sign-in: one row per (user, installation) with `account_login`, `account_type` and a `role` of
+   `admin` (present in `getAuthorizedInstallations()`) or `member` (installed, but not an admin).
+   The snapshot goes stale — a revoked install stays listed until the next sign-in — and that is the
+   accepted cost. `GET /dashboard` re-derives nothing from GitHub except the repo list, which it must
+   ask for anyway and which already fails per-installation without taking down the page.
+2. **`installations.owner_user_id` / `account_type` were not added.** They existed to speed up the
+   same question, and `user_installations` answers it with more precision (an installation can have
+   several admins). `account_type` lives on the snapshot row. If P2's review history needs a
+   per-installation owner label, it can read it from `user_installations` where `role = 'admin'`.
+
 ### 3. Routes
 
 | Route | Method | Purpose |
@@ -149,7 +176,7 @@ form and `/setup` share the same validation module so they cannot drift.
 
 ### 4. Phasing
 
-**P0 — identity + read-only dashboard (ship first, ~1 PR).**
+**P0 — identity + read-only dashboard (ship first, ~1 PR).** ✅ *Shipped in v1.8.0 (PR #46).*
 Migrations 0009; `/auth/*`; `/dashboard` listing installations and repos read from GitHub, enabled
 flag from `repos`; health banner fed by `last_error_*`. No writes yet. Acceptance: sign in with the
 Ekojoecovenant account and see all three installations and their real repos; a non-admin sees the
@@ -200,15 +227,20 @@ billing story. Audit log table: who changed what, when.
   `getAuthorizedInstallations()` rather than trusting anything the client sends.
 - **Cost:** two config surfaces (`/setup` and the dashboard). Mitigated by one shared validator and a
   test asserting the two forms produce the same config object.
-- **Risk:** backfilling `owner_user_id` is guesswork for the existing three installations. Backfill by
-  `account_login` only when the signing-in user's login matches; otherwise leave `NULL` and let the
-  first admin claim it (a claim button, not a silent guess).
+- **Risk:** backfilling `owner_user_id` is guesswork for the existing three installations. ~~Backfill
+  by `account_login` only when the signing-in user's login matches; otherwise leave `NULL` and let the
+  first admin claim it.~~ Moot — the column was never added (see "Deviation after P0"): the three
+  existing installations appear for whoever the GitHub API says can administer them, which is exactly
+  the behaviour that column was approximating.
 
 ## Open questions for the owner
 
-1. Should a signed-in non-admin *member* be able to trigger a test review? (Suggested: yes, read-only
-   plus test-review, since it is idempotent and observable.)
-2. Do we want repo discovery to page through `GET /installation/repositories` on first sign-in, or
-   lazily per installation page? (Suggested: lazily — the three-install case does not justify the code.)
-3. Is the dashboard the place for the agentic toolbox (ADR 0001), or does that stay a separate
-   surface? (Suggested: same shell, separate route, so it inherits sign-in for free.)
+Answered by the owner on 2026-11-08 ("all your recommendations"):
+
+1. Can a signed-in non-admin *member* trigger a test review? — **Yes.** Read-only everywhere else,
+   plus test-review, since it is idempotent and observable.
+2. Page through `GET /installation/repositories` on first sign-in, or lazily per installation? —
+   **Lazily.** `/dashboard` asks per installation on each load, which also means a repo added in
+   GitHub shows up on refresh instead of waiting for a re-snapshot.
+3. Is the dashboard the home of the agentic toolbox (ADR 0001)? — **Same shell, separate route**, so
+   it inherits sign-in and the CSRF/session machinery for free.
