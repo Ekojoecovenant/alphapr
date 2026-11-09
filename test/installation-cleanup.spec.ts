@@ -28,7 +28,7 @@ describe('deleteInstallation', () => {
 		await deleteInstallation(db, 149642729);
 
 		const tables = writes.map((w) => w.sql.match(/DELETE FROM (\w+)/)?.[1]);
-		expect(tables).toEqual(['user_installations', 'repos', 'pr_reviews', 'installations']);
+		expect(tables).toEqual(['user_installations', 'pr_reviews', 'repos', 'installations']);
 		expect(writes.every((w) => w.args[0] === 149642729)).toBe(true);
 	});
 });

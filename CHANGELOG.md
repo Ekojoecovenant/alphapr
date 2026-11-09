@@ -7,14 +7,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follo
 
 ### Fixed
 
-- **Uninstalling now removes the grants, the per-repo overrides and the review memory**, not just the installations row. They were unreachable but outlived the installation they described, and a re-install under the same id would have inherited them
-- **/setup edits the installation you asked for.** ?installation=<id> selects it and marks the option; values that are not among the authorized installations fall back to the first, so the page never silently shows one installation's stored config under another's name
+- **Uninstalling now removes the grants, the per-repo overrides and the review memory**, not just the `installations` row. They were unreachable but outlived the installation they described, and a re-install under the same id would have inherited them
+- **`/setup` edits the installation you asked for.** `?installation=<id>` selects it and marks the option; values that are not among the authorized installations fall back to the first, so the page never silently shows one installation's stored config under another's name
 
 ### Changed
 
-- ADR 0002 records the audit follow-ups: what closed with v1.10.3–v1.10.6, and the four items deliberately left open (kid/AAD in the ciphertext envelope, __Host- cookies, rate limiting, edirect_uri from the request host) with the reason for each
+- ADR 0002 records the audit follow-ups: what closed with v1.10.3–v1.10.6, and the four items deliberately left open (`kid`/AAD in the ciphertext envelope, `__Host-` cookies, rate limiting, `redirect_uri` from the request host) with the reason for each
 
 300 tests.
+
 ## [v1.10.6] — 2026-11-09
 
 ### Security
