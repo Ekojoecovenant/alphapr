@@ -223,7 +223,7 @@ Editing settings later doesn't require re-entering your key — leave the key fi
 
 Sign in at `/dashboard` with GitHub (`read:user` only — the token is used once to read your profile and installation list, then discarded). You get a read-only view of every installation you administer: which account it belongs to, your role on it (`admin` or `member · read-only`), the provider and model in force, whether a key is stored, the repository list with each repo's on/off state, the last review time, and any provider failure as a banner that quotes the error (for example `Key limit exceeded (total limit)`).
 
-Sessions are server-side rows in D1 with an opaque `HttpOnly` cookie, 30-day idle expiry, and CSRF tokens on sign-out. Nothing is written from this page yet — editing settings, replacing keys, and review history are the next phases in [ADR 0002](docs/adr/0002-self-serve-dashboard.md).
+Sessions are server-side rows in D1 with an opaque `HttpOnly` cookie, 30-day idle expiry, and CSRF tokens on every POST. Administrators can open a repository and switch it off, or override its provider, model, severity threshold, tone and ignored paths; members see the same page read-only. A switched-off repo is skipped silently — no comment, no check run. Key replacement, test reviews and review history are the next phases in [ADR 0002](docs/adr/0002-self-serve-dashboard.md).
 
 ### Running tests
 
@@ -280,3 +280,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and PR expectations, and 
 ---
 
 Built in public by [AlphaCode](https://github.com/Ekojoecovenant/alphapr). PRs welcome — they'll be reviewed by the bot, obviously. Inline.
+

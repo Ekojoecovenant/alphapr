@@ -20,6 +20,8 @@ export interface FakeDbSeed {
 	installationConfig?: Record<string, unknown> | null;
 	/** A single repo override row, keyed `"<installationId>:<owner>/<name>"`. */
 	repoOverrides?: Record<string, Record<string, unknown>>;
+	/** The `user_installations` row a write authorizes against, keyed `"<userId>:<installationId>"`. */
+	access?: Record<string, { role: string; account_login: string; account_type: string }>;
 }
 
 export interface FakeDb {
@@ -47,6 +49,10 @@ export function makeFakeDb(seed: FakeDbSeed = {}): FakeDb {
 						const id = String(args[0]);
 						const row = (seed.sessions ?? []).find((s) => s.session_id === id && !isExpired(s.expires_at));
 						return (row as T) ?? null;
+					}
+					if (/FROM user_installations WHERE user_id = \? AND installation_id = \?/.test(sql)) {
+						const key = `${Number(args[0])}:${Number(args[1])}`;
+						return ((seed.access ?? {})[key] as T) ?? null;
 					}
 					if (/FROM installations WHERE installation_id/.test(sql)) {
 						return (seed.installationConfig as T) ?? null;
