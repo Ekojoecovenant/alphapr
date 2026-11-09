@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { csrfToken, getSessionUser, handleAuth, SESSION_COOKIE } from '../src/auth';
+import { csrfToken, getSessionUser, handleAuth, SESSION_COOKIE, sessionIsStale, stepUpResponse } from '../src/auth';
 import { hmacSign } from '../src/setup';
 import { makeFakeDb } from './helpers/fake-d1';
 
@@ -144,16 +144,17 @@ describe('GET /auth/callback', () => {
 		expect(res?.status).toBe(302);
 		expect(res?.headers.get('Location')).toBe('/dashboard');
 
-		// Two cookies must travel as two headers. Sent as one, the browser reads
+		// Cookies must travel as separate headers. Sent as one, the browser reads
 		// the nonce-clearing Max-Age=0 as part of the session cookie and deletes
 		// the session immediately — sign-in then looks like a page refresh.
 		const cookies = res?.headers.getSetCookie() ?? [];
-		expect(cookies).toHaveLength(2);
+		expect(cookies).toHaveLength(3);
 		const sessionCookieHeader = cookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`)) ?? '';
 		expect(sessionCookieHeader).toContain('HttpOnly');
 		expect(sessionCookieHeader).toContain('Max-Age=2592000');
 		expect(sessionCookieHeader).not.toContain('Max-Age=0');
 		expect(cookies.some((c) => c.startsWith('alphapr_auth_nonce=') && c.includes('Max-Age=0'))).toBe(true);
+		expect(cookies.some((c) => c.startsWith('alphapr_auth_next=') && c.includes('Max-Age=0'))).toBe(true);
 
 		const userWrite = writes.find((w) => w.sql.includes('INSERT INTO users'));
 		expect(userWrite?.args.slice(0, 2)).toEqual([4242, 'ekojoecovenant']);
@@ -282,5 +283,108 @@ describe('POST /auth/logout', () => {
 
 		expect(res?.status).toBe(400);
 		expect(writes.some((w) => w.sql.includes('DELETE FROM sessions'))).toBe(false);
+	});
+});
+
+describe('step-up and the absolute session cap', () => {
+	function sessionRow(createdAt: string) {
+		return {
+			session_id: 'sid',
+			created_at: createdAt,
+			last_used_at: null,
+			expires_at: new Date(Date.now() + 30 * 86_400_000).toISOString().replace('T', ' ').slice(0, 19),
+			github_id: 7,
+			login: 'ekojoecovenant',
+			avatar_url: null,
+		};
+	}
+
+	const hoursAgo = (n: number) => new Date(Date.now() - n * 3_600_000).toISOString().replace('T', ' ').slice(0, 19);
+
+	it('rejects a session seven days old, however recently it was used', async () => {
+		const { db } = makeFakeDb({ sessions: [sessionRow(hoursAgo(24 * 8))] });
+		const user = await getSessionUser(new Request(ORIGIN, { headers: { Cookie: `${SESSION_COOKIE}=sid` } }), makeEnv(db));
+		expect(user).toBeNull();
+	});
+
+	it('accepts a session that is old but inside the cap', async () => {
+		const { db } = makeFakeDb({ sessions: [sessionRow(hoursAgo(24 * 3))] });
+		const user = await getSessionUser(new Request(ORIGIN, { headers: { Cookie: `${SESSION_COOKIE}=sid` } }), makeEnv(db));
+		expect(user?.createdAt).toBe(sessionRow(hoursAgo(24 * 3)).created_at);
+		expect(sessionIsStale(user!)).toBe(true);
+	});
+
+	it('treats a session opened within a day as fresh, and an older one as stale', () => {
+		const base = { sessionId: 'sid', githubId: 7, login: 'ekojoecovenant', avatarUrl: null };
+		expect(sessionIsStale({ ...base, createdAt: hoursAgo(2) })).toBe(false);
+		expect(sessionIsStale({ ...base, createdAt: hoursAgo(30) })).toBe(true);
+	});
+
+	it('sends a stale write back through GitHub, returning to the same page', () => {
+		const res = stepUpResponse(new Request(`${ORIGIN}/dashboard/installations/12/key`));
+		expect(res.status).toBe(302);
+		expect(res.headers.get('Location')).toBe('/auth/github?next=%2Fdashboard%2Finstallations%2F12%2Fkey');
+	});
+
+	it('returns to the page the write started on after signing in again', async () => {
+		const { db } = makeFakeDb();
+		const { state, nonce } = await stateAndNonce();
+		mockFetch((url) => {
+			if (url === 'https://github.com/login/oauth/access_token') {
+				return new Response(JSON.stringify({ access_token: 'gho_user_token' }), { status: 200 });
+			}
+			if (url === 'https://api.github.com/user') return ghUser();
+			if (url === 'https://api.github.com/user/installations') {
+				return ghInstallations([{ id: 1, account: { login: 'ekojoecovenant', type: 'User' } }]);
+			}
+			return undefined;
+		});
+
+		const res = await handleAuth(
+			new Request(`${ORIGIN}/auth/callback?code=abc&state=${state}`, {
+				headers: { Cookie: `alphapr_auth_nonce=${nonce}; alphapr_auth_next=/dashboard/installations/12/key` },
+			}),
+			makeEnv(db),
+		);
+
+		expect(res?.headers.get('Location')).toBe('/dashboard/installations/12/key');
+	});
+
+	it('will not bounce to another origin, even after a successful sign-in', async () => {
+		const { db } = makeFakeDb();
+		const { state, nonce } = await stateAndNonce();
+		mockFetch((url) => {
+			if (url === 'https://github.com/login/oauth/access_token') {
+				return new Response(JSON.stringify({ access_token: 'gho_user_token' }), { status: 200 });
+			}
+			if (url === 'https://api.github.com/user') return ghUser();
+			if (url === 'https://api.github.com/user/installations') {
+				return ghInstallations([{ id: 1, account: { login: 'ekojoecovenant', type: 'User' } }]);
+			}
+			return undefined;
+		});
+
+		const res = await handleAuth(
+			new Request(`${ORIGIN}/auth/callback?code=abc&state=${state}`, {
+				headers: { Cookie: `alphapr_auth_nonce=${nonce}; alphapr_auth_next=//evil.example/phish` },
+			}),
+			makeEnv(db),
+		);
+
+		expect(res?.headers.get('Location')).toBe('/dashboard');
+	});
+
+	it('only ever stores a same-origin path in the next cookie', async () => {
+		const { db } = makeFakeDb();
+		for (const hostile of ['//evil.example', 'https://evil.example', '/\\evil.example', '/ok\nSet-Cookie: x=1']) {
+			const res = await handleAuth(new Request(`${ORIGIN}/auth/github?next=${encodeURIComponent(hostile)}`), makeEnv(db));
+			const cookies = res?.headers.getSetCookie() ?? [];
+			expect(cookies.some((c) => c.startsWith('alphapr_auth_next='))).toBe(false);
+		}
+
+		const res = await handleAuth(new Request(`${ORIGIN}/auth/github?next=%2Fdashboard%2Finstallations%2F12%2Fkey`), makeEnv(db));
+		const next = (res?.headers.getSetCookie() ?? []).find((c) => c.startsWith('alphapr_auth_next=')) ?? '';
+		expect(next).toContain('alphapr_auth_next=/dashboard/installations/12/key');
+		expect(next).toContain('Path=/auth');
 	});
 });

@@ -1,5 +1,6 @@
 import { encryptSecret } from './crypto';
 import { PROVIDERS } from './review/provider-types';
+import { type CspOptions, htmlHeaders } from './security';
 import { configFormPage, errorPage, esc, noInstallationsPage, successPage } from './setup-pages';
 
 // ── HMAC signing for state params and form tokens ──
@@ -37,11 +38,17 @@ function getCookie(request: Request, name: string): string | null {
 	return null;
 }
 
-function htmlResponse(body: string, status = 200): Response {
-	return new Response(body, {
-		status,
-		headers: { 'Content-Type': 'text/html; charset=utf-8' },
-	});
+const SETUP_BINDING_COOKIE = 'alphapr_setup_binding';
+
+/** Same 10 minute life as the form token; `Secure` is dropped only for local dev. */
+function setupBindingCookie(request: Request, binding: string): string {
+	const { hostname } = new URL(request.url);
+	const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost');
+	return `${SETUP_BINDING_COOKIE}=${binding}; HttpOnly; SameSite=Lax; Path=/setup; Max-Age=600${isLocal ? '' : '; Secure'}`;
+}
+
+function htmlResponse(body: string, status = 200, csp: CspOptions = {}): Response {
+	return new Response(body, { status, headers: htmlHeaders({ csp }) });
 }
 
 interface RawInstallation {
@@ -198,12 +205,18 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 
 		const allowedPairs = installations.map((i) => `${i.id}:${i.account.login}`).join(',');
 		const exp = (Date.now() + 10 * 60 * 1000).toString();
-		const payload = `${allowedPairs}|${exp}`;
+		// The token used to be a portable bearer credential: anyone who saw the
+		// rendered page (a log, a screenshot, a shared browser, an XSS elsewhere on
+		// the origin) could replay it for ten minutes. It is now bound to a nonce
+		// that only the browser that completed the OAuth round trip holds.
+		const binding = randomHex(16);
+		const bindingDigest = await hmacSign(`setup-binding:${binding}`, env.SETUP_SIGNING_SECRET);
+		const payload = `${allowedPairs}|${exp}|${bindingDigest}`;
 		const formToken = `${payload}.${await hmacSign(payload, env.SETUP_SIGNING_SECRET)}`;
 
 		const options = installations.map((i) => `<option value="${i.id}">${esc(i.account.login)} (${i.id})</option>`).join('');
 
-		return htmlResponse(
+		const page = htmlResponse(
 			configFormPage({
 				installationOptions: options,
 				currentProvider: existingConfig?.provider ?? 'openrouter',
@@ -214,6 +227,8 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 				formToken,
 			}),
 		);
+		page.headers.append('Set-Cookie', setupBindingCookie(request, binding));
+		return page;
 	}
 
 	// 3) Save: verify token, resolve login, conditionally update key, store config
@@ -236,9 +251,14 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 			return htmlResponse(errorPage('Invalid form token.'), 400);
 		}
 
-		const [allowedPairs, exp] = payload.split('|');
+		const [allowedPairs, exp, bindingDigest] = payload.split('|');
 		if (Date.now() > parseInt(exp, 10)) {
 			return htmlResponse(errorPage('This form expired.'), 400);
+		}
+
+		const binding = getCookie(request, SETUP_BINDING_COOKIE);
+		if (!binding || !bindingDigest || !(await hmacVerify(`setup-binding:${binding}`, bindingDigest, env.SETUP_SIGNING_SECRET))) {
+			return htmlResponse(errorPage('This form was opened in a different browser. Start again from /setup.'), 403);
 		}
 
 		const match = allowedPairs
@@ -322,7 +342,9 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 				.run();
 		}
 
-		return htmlResponse(successPage(match.login, installationId));
+		const done = htmlResponse(successPage(match.login, installationId));
+		done.headers.append('Set-Cookie', `${SETUP_BINDING_COOKIE}=; HttpOnly; SameSite=Lax; Path=/setup; Max-Age=0`);
+		return done;
 	}
 
 	return null;

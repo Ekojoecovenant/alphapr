@@ -220,11 +220,13 @@ After installing, visit `/setup` to configure per installation:
 
 Editing settings later doesn't require re-entering your key — leave the key field blank to keep it.
 
+The configuration form is valid for ten minutes **and only in the browser that started the flow**: the hidden form token is signed together with a nonce cookie set when GitHub redirects back, so a token copied out of the page — from a log, a screenshot, a shared machine — cannot be replayed anywhere else.
+
 ### Dashboard
 
 Sign in at `/dashboard` with GitHub (`read:user` only — the token is used once to read your profile and installation list, then discarded). You get a read-only view of every installation you administer: which account it belongs to, your role on it (`admin` or `member · read-only`), the provider and model in force, whether a key is stored, the repository list with each repo's on/off state, the last review time, and any provider failure as a banner that quotes the error (for example `Key limit exceeded (total limit)`).
 
-Sessions are server-side rows in D1 with an opaque `HttpOnly` cookie, 30-day idle expiry, and CSRF tokens on every POST. Administrators can open a repository and switch it off, or override its provider, model, severity threshold, tone and ignored paths; members see the same page read-only. An installation card also carries the provider key: a password field replaces it (the key is encrypted before it is stored, and only the last four characters are ever rendered as a hint) and a **Test provider** button makes one 16-token call so you find out your key is dead here rather than in a pull request. A switched-off repo is skipped silently — no comment, no check run. Review history is the next phase in [ADR 0002](docs/adr/0002-self-serve-dashboard.md).
+Sessions are server-side rows in D1 with an opaque `HttpOnly` cookie, 30-day idle expiry and a hard seven-day cap, and CSRF tokens on every POST. A write from a session older than a day is sent back through GitHub first, so a role removed since you signed in is picked up before anything is changed. Administrators can open a repository and switch it off, or override its provider, model, severity threshold, tone and ignored paths; members see the same page read-only. An installation card also carries the provider key: a password field replaces it (the key is encrypted before it is stored, and only the last four characters are ever rendered as a hint) and a **Test provider** button makes one 16-token call so you find out your key is dead here rather than in a pull request. A switched-off repo is skipped silently — no comment, no check run. Review history is the next phase in [ADR 0002](docs/adr/0002-self-serve-dashboard.md).
 
 ### Running tests
 
@@ -256,7 +258,7 @@ src/
   setup-pages.ts           # landing page, setup form, success/error pages
   setup-styles.ts          # design tokens, page CSS, theme + scene scripts
   auth.ts                  # dashboard sign-in: OAuth state, sessions, CSRF
-  dashboard.ts             # GET /dashboard — read-only installations + repos
+  dashboard.ts             # /dashboard — installations, repo settings, key and provider test
   dashboard-pages.ts       # dashboard markup
   db.ts                    # D1 queries
   crypto.ts                # AES-GCM key encryption

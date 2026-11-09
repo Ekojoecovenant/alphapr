@@ -8,7 +8,11 @@ const FONTS =
 	'<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Mono:wght@400;500&display=swap">';
 
 const PAGE_SCRIPT_TAG = `<script>${PAGE_SCRIPT}</script>`;
-const SCENE_SCRIPTS = `<script src="https://unpkg.com/three@0.160.0/build/three.min.js" defer></script><script>${SCENE_SCRIPT}</script>`;
+// Pinned version + SRI: if the CDN serves anything other than this exact bundle
+// the browser refuses to run it, and the page keeps the static scene it already
+// drew. `crossorigin` is required for integrity to be enforced.
+const THREE_INTEGRITY = 'sha384-qOkzR5Ke/XkQxuGVJ9hpFEpDlcoLtWwVYhnJf06cLIZa2vaIptSqaubivErzmD5O';
+const SCENE_SCRIPTS = `<script src="https://unpkg.com/three@0.160.0/build/three.min.js" integrity="${THREE_INTEGRITY}" crossorigin="anonymous" defer></script><script>${SCENE_SCRIPT}</script>`;
 
 export interface ShellOptions {
 	scene?: boolean;

@@ -9,7 +9,7 @@
 // single repository never reaches the page. CSRF is a double-submit token bound
 // to the session.
 
-import { csrfToken, getSessionUser, sessionCookie, verifyCsrf } from './auth';
+import { csrfToken, getSessionUser, sessionCookie, sessionIsStale, stepUpResponse, verifyCsrf } from './auth';
 import { decryptSecret, encryptSecret } from './crypto';
 import { type DashboardInstallation, dashboardPage, repoSettingsPage, signInPage } from './dashboard-pages';
 import { setInstallationKey } from './db';
@@ -27,6 +27,7 @@ import {
 	saveRepoOverride,
 } from './review-config';
 import { sanitizeDetail } from './review-handler';
+import { htmlHeaders } from './security';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -148,10 +149,7 @@ async function loadInstallations(env: Env, userId: number): Promise<DashboardIns
 }
 
 function html(body: string, status = 200): Response {
-	return new Response(body, {
-		status,
-		headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' },
-	});
+	return new Response(body, { status, headers: htmlHeaders({ cacheControl: 'private, no-store' }) });
 }
 
 function redirect(location: string): Response {
@@ -236,6 +234,9 @@ async function handleRepoRoute(request: Request, env: Env, installationId: numbe
 	const settingsPath = `/dashboard/installations/${installationId}/repos/${encodeURIComponent(canonical.owner)}/${encodeURIComponent(canonical.name)}`;
 
 	if (request.method === 'POST') {
+		// The role below came from a snapshot taken at sign-in. A write needs a
+		// snapshot this week, so a demoted admin loses write access within a day.
+		if (sessionIsStale(user)) return stepUpResponse(request);
 		if (access.role !== 'admin') {
 			return messagePage('Read-only', 'Your role on this installation is member, so you can look but not change anything.', 403);
 		}
@@ -325,6 +326,7 @@ async function handleInstallationRoute(request: Request, env: Env, installationI
 
 	const access = await accessFor(env, user.githubId, installationId);
 	if (!access) return messagePage('Not found', 'That installation is not one you can see.', 404);
+	if (sessionIsStale(user)) return stepUpResponse(request);
 	if (access.role !== 'admin') {
 		return messagePage('Read-only', 'Your role on this installation is member, so you can look but not change anything.', 403);
 	}
