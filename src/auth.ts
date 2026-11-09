@@ -70,6 +70,14 @@ function sqlTimestamp(date: Date): string {
 }
 
 /**
+ * Re-issue the session cookie so its Max-Age tracks the sliding expiry; without
+ * this the row outlives the cookie and the user is signed out anyway.
+ */
+export function sessionCookie(request: Request, sessionId: string): string {
+	return cookieHeader(request, SESSION_COOKIE, sessionId, SESSION_TTL_SECONDS);
+}
+
+/**
  * CSRF for state-changing dashboard requests. The token is derived from the
  * session id and signed with the existing HMAC helper, so it needs no cookie and
  * cannot be minted without the session it protects.
@@ -100,7 +108,11 @@ export async function getSessionUser(request: Request, env: Env): Promise<Sessio
 	if (!row) return null;
 
 	if (!row.last_used_at || Date.now() - Date.parse(`${row.last_used_at}Z`) > TOUCH_INTERVAL_MS) {
-		await env.DB.prepare(`UPDATE sessions SET last_used_at = datetime('now') WHERE id = ?`).bind(sessionId).run();
+		// Sliding expiry: a session dies after 30 days of *not* being used, so
+		// the stamp and the deadline move together.
+		await env.DB.prepare(`UPDATE sessions SET last_used_at = datetime('now'), expires_at = datetime('now', ?) WHERE id = ?`)
+			.bind(`+${SESSION_TTL_SECONDS} seconds`, sessionId)
+			.run();
 	}
 
 	return { sessionId: row.session_id, githubId: row.github_id, login: row.login, avatarUrl: row.avatar_url };

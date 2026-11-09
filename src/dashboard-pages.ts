@@ -155,7 +155,7 @@ export function dashboardPage(data: DashboardData): string {
       ${errorBanner(installations)}
       ${body}
     </div></div>`,
-		{ signedIn: true, login: user.login },
+		{ signedIn: true, login: user.login, csrf },
 	);
 }
 
@@ -186,7 +186,7 @@ function selectField(
 		.map((option) => `<option value="${esc(option)}"${selected === option ? ' selected' : ''}>${esc(option)}</option>`)
 		.join('');
 	return `<div class="field">
-      <label for="${id}">${esc(label)}</label>
+      <label for="${id}">${esc(label)}${selected ? '<span class="badge">overridden</span>' : ''}</label>
       <select id="${id}" name="${id}"${disabled ? ' disabled' : ''}>${inherit}${rest}</select>
       <p class="field-help">Installation default: <code>${esc(inherited)}</code></p>
     </div>`;
@@ -239,9 +239,9 @@ export function repoSettingsPage(data: RepoSettingsData): string {
         </div>
         <div class="setup-foot">
           <span class="form-status">${disabled ? 'Read-only — your role on this installation is member.' : `Editing @${esc(accountLogin)} (${esc(accountType)})`}</span>
-          <div style="display: flex; gap: 10px;">
-            <button class="btn btn-ghost" type="submit" name="action" value="reset"${disabled ? ' disabled' : ''}>Reset to inherit</button>
+          <div style="display: flex; flex-direction: row-reverse; justify-content: flex-end; gap: 10px;">
             <button class="btn btn-primary" type="submit"${disabled ? ' disabled' : ''}>Save</button>
+            <button class="btn btn-ghost" type="submit" name="action" value="reset"${disabled ? ' disabled' : ''}>Reset to inherit</button>
           </div>
         </div>
       </form>
@@ -259,6 +259,6 @@ export function repoSettingsPage(data: RepoSettingsData): string {
       ${banner}
       ${content}
     </div></div>`,
-		{ signedIn: true, login: user.login },
+		{ signedIn: true, login: user.login, csrf },
 	);
 }

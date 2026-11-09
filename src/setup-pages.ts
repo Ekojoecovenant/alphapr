@@ -14,6 +14,8 @@ export interface ShellOptions {
 	scene?: boolean;
 	signedIn?: boolean;
 	login?: string;
+	/** The CSRF token the top-bar sign-out form must post — without it, logout is a 403. */
+	csrf?: string;
 }
 
 export function shell(title: string, body: string, opts: ShellOptions = {}): string {
@@ -21,8 +23,8 @@ export function shell(title: string, body: string, opts: ShellOptions = {}): str
 		opts.signedIn ? `<a class="bar-link" href="/dashboard">/dashboard</a>` : '',
 		`<a class="bar-link" href="/setup">/setup</a>`,
 		`<a class="bar-link" href="https://github.com/Ekojoecovenant/alphapr">GitHub</a>`,
-		opts.signedIn
-			? `<form class="bar-form" method="POST" action="/auth/logout"><button class="bar-link" type="submit">Sign out${opts.login ? ` @${esc(opts.login)}` : ''}</button></form>`
+		opts.signedIn && opts.csrf
+			? `<form class="bar-form" method="POST" action="/auth/logout"><input type="hidden" name="csrf" value="${esc(opts.csrf)}"><button class="bar-link" type="submit">Sign out${opts.login ? ` @${esc(opts.login)}` : ''}</button></form>`
 			: '',
 		`<button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false" aria-label="Toggle theme">
       <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>

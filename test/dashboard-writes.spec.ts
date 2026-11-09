@@ -253,3 +253,72 @@ describe('POST repo settings', () => {
 		expect(writesStartingWith('DELETE FROM repos')).toHaveLength(0);
 	});
 });
+
+describe('fixes from AlphaPR review (PR #46, #49)', () => {
+	it('makes the top-bar sign-out carry the CSRF token it is checked against', async () => {
+		const { db } = makeDb('admin');
+		const html = (await (await handleDashboard(request(), makeEnv(db)))?.text()) ?? '';
+		const form = html.slice(html.indexOf('action="/auth/logout"'), html.indexOf('</form>', html.indexOf('action="/auth/logout"')));
+
+		expect(form).toContain('name="csrf"');
+		expect(form).toContain(`value="${await csrf()}"`);
+	});
+
+	it('puts Save before Reset to inherit, so Enter saves instead of wiping the overrides', async () => {
+		const { db } = makeDb('admin', {
+			enabled: 1,
+			provider: 'anthropic',
+			model: null,
+			severity_threshold: null,
+			review_tone: null,
+			ignore_paths: null,
+		});
+		const html = (await (await handleDashboard(request(), makeEnv(db)))?.text()) ?? '';
+
+		const save = html.indexOf('class="btn btn-primary" type="submit"');
+		const reset = html.indexOf('name="action" value="reset"');
+
+		expect(save).toBeGreaterThan(-1);
+		expect(reset).toBeGreaterThan(-1);
+		expect(save).toBeLessThan(reset);
+	});
+
+	it('answers a malformed escape in the path with 404 rather than throwing', async () => {
+		const { db } = makeDb('admin');
+		const res = await handleDashboard(request('/dashboard/installations/12/repos/acme%zz/api'), makeEnv(db));
+
+		expect(res?.status).toBe(404);
+	});
+
+	it('refuses a severity value the review path would not understand', async () => {
+		const { db, writesStartingWith } = makeDb('admin');
+		const res = await handleDashboard(await post({ csrf: await csrf(), severity_threshold: 'everything' }), makeEnv(db));
+
+		expect(res?.status).toBe(400);
+		expect(await res?.text()).toContain('Not saved');
+		expect(writesStartingWith('INSERT INTO repos')).toHaveLength(0);
+	});
+
+	it('refuses an unknown review tone the same way', async () => {
+		const { db, writesStartingWith } = makeDb('admin');
+		const res = await handleDashboard(await post({ csrf: await csrf(), review_tone: 'verbose' }), makeEnv(db));
+
+		expect(res?.status).toBe(400);
+		expect(writesStartingWith('INSERT INTO repos')).toHaveLength(0);
+	});
+
+	it('badges the severity and tone selects once they stop inheriting', async () => {
+		const { db } = makeDb('admin', {
+			enabled: 1,
+			provider: null,
+			model: null,
+			severity_threshold: 'major',
+			review_tone: 'concise',
+			ignore_paths: null,
+		});
+		const html = (await (await handleDashboard(request(), makeEnv(db)))?.text()) ?? '';
+
+		expect(html).toContain('<label for="severity_threshold">Severity threshold<span class="badge">overridden</span></label>');
+		expect(html).toContain('<label for="review_tone">Review tone<span class="badge">overridden</span></label>');
+	});
+});
