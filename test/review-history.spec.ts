@@ -197,6 +197,18 @@ describe('pricing', () => {
 		expect(estimateCost('deepseek/deepseek-v4-flash-0731', 1000, 1000)).toBeNull();
 	});
 
+	it('does not price a different product whose name merely contains a known one', () => {
+		// A community fine-tune is not gpt-4o, whatever it is called.
+		expect(priceFor('meta/gpt-4o-distill')).toBeNull();
+		expect(priceFor('not-gpt-4o')).toBeNull();
+	});
+
+	it('prices nothing when only one side of the token count is known', () => {
+		// Costing the missing side as zero would understate the bill confidently.
+		expect(estimateCost('gpt-4o-mini', 1000, null)).toBeNull();
+		expect(estimateCost('gpt-4o-mini', null, 1000)).toBeNull();
+	});
+
 	it('estimates input plus output at per-million rates', () => {
 		// 100k input at $0.15/M = $0.015, 20k output at $0.60/M = $0.012.
 		expect(estimateCost('gpt-4o-mini', 100_000, 20_000)).toBeCloseTo(0.027, 6);
@@ -249,6 +261,25 @@ describe('GET /dashboard/reviews', () => {
 		expect(html).toContain('2026-11-09 16:04 UTC');
 		expect(html).toContain('abcdef1');
 		expect(html).toContain('Reviews');
+		expect(html).toContain('openai');
+		expect(html).toContain('2 recorded reviews.');
+	});
+
+	it('says when it is showing a truncated slice rather than everything', async () => {
+		const many = Array.from({ length: 60 }, (_, index) => ({
+			installation_id: 12,
+			repo_full_name: 'acme/api',
+			pr_number: index + 1,
+			head_sha: 'abcdef1',
+			created_at: `2026-11-09 10:${String(index).padStart(2, '0')}:00`,
+			model: 'gpt-4o-mini',
+			provider: 'openai',
+			input_tokens: 1,
+			output_tokens: 1,
+		}));
+		const fake = makeFakeDb(seed({ reviewHistory: many }));
+		const html = await (await handleDashboard(get('/dashboard/reviews'), makeEnv(fake.db)))?.text();
+		expect(html).toContain('Showing the 50 most recent of 60 recorded reviews.');
 	});
 
 	it('sends a signed-out visitor to the sign-in page instead of an empty table', async () => {

@@ -9,7 +9,11 @@
 //   * unknown model → null, and the page shows tokens only. Never guess.
 //   * prices are list prices in USD per million tokens, recorded as of the date
 //     below. They drift; the page says so instead of pretending otherwise.
-//   * matching is by longest prefix, so `gpt-4o-mini` wins over `gpt-4o`.
+//   * an id matches only when it is the model itself or that model plus a
+//     version suffix (`gpt-4o-mini-2024-07-18`, `…-latest`). A name that merely
+//     *contains* a known model — a community fine-tune called
+//     `gpt-4o-distill` — is a different product at a different price, so it is
+//     not priced at all.
 
 export interface Price {
 	/** USD per million input tokens. */
@@ -27,28 +31,40 @@ const PRICES: Record<string, Price> = {
 	'claude-opus-4': { inputPerMillion: 15, outputPerMillion: 75 },
 };
 
+/** `openai/gpt-4o-mini` → `gpt-4o-mini`; a bare id is left alone. */
+function withoutVendor(id: string): string {
+	return id.replace(/^[a-z0-9._-]+\//, '');
+}
+
+const VERSION_SUFFIX = /^-(?:\d{4}-\d{2}-\d{2}|\d{8}|\d{6}|latest|preview|v\d+)$/;
+
 /** Null when the model is not in the table — the caller must not invent a price. */
 export function priceFor(model: string | null): Price | null {
 	if (!model) return null;
-	const key = model.toLowerCase();
-	const candidates = Object.keys(PRICES)
-		.filter((name) => key.includes(name))
-		.sort((a, b) => b.length - a.length);
-	const match = candidates[0];
-	return match ? (PRICES[match] ?? null) : null;
+	const id = withoutVendor(model.toLowerCase().trim());
+	// Longest first, so `gpt-4o-mini` is tested before `gpt-4o`.
+	for (const name of Object.keys(PRICES).sort((a, b) => b.length - a.length)) {
+		if (id === name) return PRICES[name] ?? null;
+		if (id.startsWith(name) && VERSION_SUFFIX.test(id.slice(name.length))) return PRICES[name] ?? null;
+	}
+	return null;
 }
 
-/** `null` when either the model is unknown or the token counts are unknown. */
+/**
+ * `null` when the model is unknown **or** either token count is missing. A
+ * provider that reports one side and not the other did not tell us enough to
+ * price the call, and costing the missing side as zero would understate the
+ * bill with the same confidence as a complete figure.
+ */
 export function estimateCost(
 	model: string | null,
 	inputTokens: number | null | undefined,
 	outputTokens: number | null | undefined,
 ): number | null {
+	if (inputTokens == null || outputTokens == null) return null;
 	const price = priceFor(model);
 	if (!price) return null;
-	if (inputTokens == null && outputTokens == null) return null;
-	const cost = ((inputTokens ?? 0) / 1_000_000) * price.inputPerMillion + ((outputTokens ?? 0) / 1_000_000) * price.outputPerMillion;
-	return cost;
+	return (inputTokens / 1_000_000) * price.inputPerMillion + (outputTokens / 1_000_000) * price.outputPerMillion;
 }
 
 /**

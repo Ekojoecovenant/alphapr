@@ -426,6 +426,7 @@ async function handleHistoryRoute(request: Request, env: Env, pathname: string):
 						user,
 						csrf,
 						installations: ids.length,
+						total: (await loadUsageTotals(env.DB, ids)).reviews,
 						rows: (await listReviewHistory(env.DB, ids, 50)).map((row) => ({
 							repoFullName: row.repo_full_name,
 							prNumber: row.pr_number,

@@ -166,7 +166,8 @@ export function dashboardPage(data: DashboardData): string {
 		'Dashboard',
 		`<div class="dash"><div class="shell">
       ${userStrip(user, csrf)}
-      <header class="page-head" style="margin-top: 28px;">
+      ${dashNav('overview')}
+      <header class="page-head" style="margin-top: 20px;">
         <h1>Your installations.</h1>
         <p class="lede">${installations.length} installation${installations.length === 1 ? '' : 's'}, ${repoCount} repositor${repoCount === 1 ? 'y' : 'ies'}, ${enabledCount} being reviewed. Open a repository to switch it off or override its provider, model, severity, tone or ignored paths. The installation-wide defaults still live on <a href="/setup">/setup</a>.</p>
       </header>
@@ -312,6 +313,8 @@ export interface ReviewsData {
 	user: SessionUser;
 	csrf: string;
 	rows: ReviewRowView[];
+	/** Every recorded review, so the page can be honest about truncation. */
+	total: number;
 	installations: number;
 }
 
@@ -322,6 +325,10 @@ function shortTime(value: string): string {
 
 export function reviewsPage(data: ReviewsData): string {
 	const { user, csrf, rows } = data;
+	const scope =
+		data.total > rows.length
+			? `Showing the ${rows.length} most recent of ${data.total} recorded reviews.`
+			: `${data.total} recorded review${data.total === 1 ? '' : 's'}.`;
 
 	const table =
 		rows.length === 0
@@ -352,7 +359,7 @@ export function reviewsPage(data: ReviewsData): string {
                 <td class="mono">${esc(shortTime(row.createdAt))}</td>
                 <td><a href="https://github.com/${esc(row.repoFullName)}/pull/${row.prNumber}">${esc(row.repoFullName)} #${row.prNumber}</a></td>
                 <td class="mono">${esc(row.headSha.slice(0, 7))}</td>
-                <td class="mono">${esc(row.model ?? 'unknown')}</td>
+                <td class="mono">${esc(row.model ?? 'unknown')}${row.provider ? `<span class="muted"> · ${esc(row.provider)}</span>` : ''}</td>
                 <td class="num mono">${esc(tokens)}</td>
               </tr>`;
 							})
@@ -368,7 +375,7 @@ export function reviewsPage(data: ReviewsData): string {
       ${dashNav('reviews')}
       <header class="page-head">
         <h1>What was reviewed.</h1>
-        <p class="lede">One row per review AlphaPR posted, newest first, across the ${data.installations} installation${data.installations === 1 ? '' : 's'} you administer. A pull request you push to twice appears twice — the second row is the incremental review.</p>
+        <p class="lede">One row per review AlphaPR posted, newest first, across the ${data.installations} installation${data.installations === 1 ? '' : 's'} you administer. A pull request you push to twice appears twice — the second row is the incremental review. ${scope}</p>
       </header>
       ${table}
     </div></div>`,
