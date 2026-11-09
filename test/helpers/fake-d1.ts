@@ -65,7 +65,11 @@ export function makeFakeDb(seed: FakeDbSeed = {}): FakeDb {
 				},
 				async all<T>(): Promise<{ results: T[]; success: boolean; meta: unknown }> {
 					if (/FROM user_installations ui/.test(sql)) {
-						return result((seed.installations ?? []) as T[]) as never;
+						const rows = (seed.installations ?? []) as Array<{ role?: string }>;
+						// The dashboard drops non-admin rows; ignoring that here would let a
+						// test pass while the leak is still open.
+						const scoped = /role = 'admin'/.test(sql) ? rows.filter((row) => (row.role ?? 'admin') === 'admin') : rows;
+						return result(scoped as T[]) as never;
 					}
 					if (/FROM repos WHERE installation_id/.test(sql)) {
 						return result((seed.repos?.[Number(args[0])] ?? []) as T[]) as never;

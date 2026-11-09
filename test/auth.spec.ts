@@ -159,13 +159,11 @@ describe('GET /auth/callback', () => {
 		expect(userWrite?.args.slice(0, 2)).toEqual([4242, 'ekojoecovenant']);
 
 		const installationWrites = writes.filter((w) => w.sql.includes('INSERT INTO user_installations'));
-		expect(installationWrites).toHaveLength(2);
-		// Personal install owned by the signer is admin; the org where they are
-		// only a member is not.
-		expect(installationWrites.map((w) => [w.args[1], w.args[4]])).toEqual([
-			[1, 'admin'],
-			[2, 'member'],
-		]);
+		// Only installations the user can administer are stored. The org where
+		// they are merely a member is dropped — keeping it would list every repo
+		// on that account, including ones they cannot see.
+		expect(installationWrites).toHaveLength(1);
+		expect(installationWrites.map((w) => [w.args[1], w.args[4]])).toEqual([[1, 'admin']]);
 
 		const sessionWrite = writes.find((w) => w.sql.includes('INSERT INTO sessions'));
 		expect(sessionWrite?.args[1]).toBe(4242);

@@ -213,8 +213,11 @@ export async function handleAuth(request: Request, env: Env): Promise<Response |
 		}
 		const { installations } = (await instRes.json()) as { installations: RawInstallation[] };
 
+		// Only installations this user can actually administer. GitHub's
+		// /user/installations also lists installations where the user merely has
+		// access to one repository — showing those would leak every other repo on
+		// the account, so they are dropped here and never written.
 		const authorized = await getAuthorizedInstallations(accessToken, installations);
-		const adminIds = new Set(authorized.map((i) => i.id));
 
 		await env.DB.prepare(
 			`INSERT INTO users (github_id, login, avatar_url, last_seen_at) VALUES (?, ?, ?, datetime('now'))
@@ -229,18 +232,12 @@ export async function handleAuth(request: Request, env: Env): Promise<Response |
 		// Replace the snapshot: an installation the user lost access to should
 		// disappear, not linger from a previous sign-in.
 		await env.DB.prepare(`DELETE FROM user_installations WHERE user_id = ?`).bind(me.id).run();
-		for (const installation of installations) {
+		for (const installation of authorized) {
 			await env.DB.prepare(
 				`INSERT INTO user_installations (user_id, installation_id, account_login, account_type, role)
          VALUES (?, ?, ?, ?, ?)`,
 			)
-				.bind(
-					me.id,
-					installation.id,
-					installation.account.login,
-					installation.account.type,
-					adminIds.has(installation.id) ? 'admin' : 'member',
-				)
+				.bind(me.id, installation.id, installation.account.login, installation.account.type, 'admin')
 				.run();
 		}
 

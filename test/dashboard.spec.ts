@@ -52,11 +52,12 @@ function installation(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function mockRepoList(repos: Record<number, Array<{ full_name: string; private: boolean; archived: boolean }>>) {
+function mockRepoList(repos: Record<number, Array<{ full_name: string; private: boolean; archived: boolean }>>, calls: string[] = []) {
 	vi.stubGlobal(
 		'fetch',
 		vi.fn(async (input: RequestInfo | URL) => {
 			const url = String(input);
+			calls.push(url);
 			const m = url.match(/^https:\/\/api\.github\.com\/installation\/repositories/);
 			if (m) {
 				// The installation is encoded in the token the module mock hands back.
@@ -111,13 +112,17 @@ describe('GET /dashboard when signed in', () => {
 		expect(html).toContain('2026-11-04 19:52');
 	});
 
-	it('renders a read-only installation without admin claims', async () => {
+	it('never renders an installation the user only has member access to', async () => {
 		const { db } = signedInDb([installation({ account_login: 'ForXed', account_type: 'Organization', role: 'member' })]);
-		mockRepoList({ 1: [{ full_name: 'ForXed/api', private: true, archived: false }] });
+		const fetched: string[] = [];
+		mockRepoList({ 1: [{ full_name: 'ForXed/api', private: true, archived: false }] }, fetched);
 
 		const html = await (await handleDashboard(dashboardRequest(), makeEnv(db)))?.text();
-		expect(html).toContain('member · read-only');
-		expect(html).toContain('private');
+		// The account, its repos and even its existence must not reach the page:
+		// listing it would expose every repository the installation can see.
+		expect(html).not.toContain('ForXed');
+		expect(html).not.toContain('ForXed/api');
+		expect(fetched).toHaveLength(0);
 	});
 
 	it('surfaces the last provider failure in a banner', async () => {

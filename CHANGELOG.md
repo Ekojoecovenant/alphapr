@@ -3,6 +3,13 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.10.2] — 2026-11-09
+
+### Security
+
+- **The dashboard no longer lists installations the signed-in user cannot administer.** GitHub's `GET /user/installations` returns every installation the user can reach, including ones where they only have access to a single repository — so an account they barely touch showed up alongside all of its other repositories (`zayn-tech-info`). Sign-in now stores only the installations returned by `getAuthorizedInstallations` (owner, or org admin with an active membership), the `member` snapshot branch is gone, and `loadInstallations` additionally filters on `role = 'admin'` so rows written before this release cannot reach the page either. The query never fires, so those repositories are never even fetched from GitHub
+- Regression coverage: the sign-in test asserts only the administered installation is written, and a dashboard test asserts a member-only installation's name, repos and repository API call all stay off the page. The fake D1 honours the `role = 'admin'` filter instead of ignoring it, so a test can no longer pass while the leak is open
+
 ## [v1.10.1] — 2026-11-09
 
 Signing in with GitHub worked — the redirect, the code exchange and the session row were all correct — but the browser never kept the cookie, so `/dashboard` kept showing the sign-in page and the button looked like it did nothing.
