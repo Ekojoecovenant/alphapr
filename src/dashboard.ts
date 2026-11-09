@@ -326,7 +326,9 @@ async function handleInstallationRoute(request: Request, env: Env, installationI
 
 	const access = await accessFor(env, user.githubId, installationId);
 	if (!access) return messagePage('Not found', 'That installation is not one you can see.', 404);
-	if (sessionIsStale(user)) return stepUpResponse(request);
+	// The router already answers 405 for every method but POST; the check is
+	// spelled out anyway so this reads as a write gate without tracing the router.
+	if (request.method === 'POST' && sessionIsStale(user)) return stepUpResponse(request);
 	if (access.role !== 'admin') {
 		return messagePage('Read-only', 'Your role on this installation is member, so you can look but not change anything.', 403);
 	}
