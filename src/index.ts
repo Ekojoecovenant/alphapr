@@ -161,7 +161,7 @@ export default {
 			// review, so a failure here falls through to reviewing as normal.
 			let lastReviewedSha: string | null = null;
 			try {
-				const prior = await getReviewState(env.DB, payload.repository.full_name, payload.number);
+				const prior = await getReviewState(env.DB, payload.installation.id, payload.repository.full_name, payload.number);
 				lastReviewedSha = prior?.last_reviewed_sha ?? null;
 			} catch (err) {
 				console.error(`Could not read review state for dedupe (reviewing anyway): ${err instanceof Error ? err.message : err}`);

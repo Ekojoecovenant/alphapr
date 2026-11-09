@@ -3,6 +3,16 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.10.5] — 2026-11-09
+
+### Security
+
+- **Review memory is keyed by installation, not by repository name.** `pr_reviews` was keyed `(repo_full_name, pr_number)`, so two tenants that both carried `acme/api` shared a single row: one installation's last reviewed SHA and previous review body were readable by the other, and uninstalling left the row behind. The table is rebuilt with `(installation_id, repo_full_name, pr_number)` as the key (migration `0014`); rows written before this have `installation_id = 0`, which matches no real installation, so that memory is dropped rather than mis-attributed to a tenant that never wrote it
+
+### Changed
+
+- `getReviewState` and `saveReviewState` in `src/db.ts` take the installation id as their second argument; the webhook dedupe check and the review handler both pass `installation.id`
+
 ## [v1.10.4] — 2026-11-09
 
 ### Security
