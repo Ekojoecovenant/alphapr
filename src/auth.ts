@@ -296,7 +296,7 @@ export async function handleAuth(request: Request, env: Env): Promise<Response |
 		await env.DB.prepare(`DELETE FROM user_installations WHERE user_id = ?`).bind(me.id).run();
 		for (const installation of authorized) {
 			await env.DB.prepare(
-				`INSERT INTO user_installations (user_id, installation_id, account_login, account_type, role)
+				`INSERT OR IGNORE INTO user_installations (user_id, installation_id, account_login, account_type, role)
          VALUES (?, ?, ?, ?, ?)`,
 			)
 				.bind(me.id, installation.id, installation.account.login, installation.account.type, 'admin')
@@ -312,7 +312,7 @@ export async function handleAuth(request: Request, env: Env): Promise<Response |
 		for (const installation of installations) {
 			if (!invited.has(installation.id) || adminIds.has(installation.id)) continue;
 			await env.DB.prepare(
-				`INSERT INTO user_installations (user_id, installation_id, account_login, account_type, role)
+				`INSERT OR IGNORE INTO user_installations (user_id, installation_id, account_login, account_type, role)
          VALUES (?, ?, ?, ?, ?)`,
 			)
 				.bind(me.id, installation.id, installation.account.login, installation.account.type, 'member')

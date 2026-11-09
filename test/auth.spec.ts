@@ -159,7 +159,7 @@ describe('GET /auth/callback', () => {
 		const userWrite = writes.find((w) => w.sql.includes('INSERT INTO users'));
 		expect(userWrite?.args.slice(0, 2)).toEqual([4242, 'ekojoecovenant']);
 
-		const installationWrites = writes.filter((w) => w.sql.includes('INSERT INTO user_installations'));
+		const installationWrites = writes.filter((w) => w.sql.includes('INSERT OR IGNORE INTO user_installations'));
 		// Only installations the user can administer are stored. The org where
 		// they are merely a member is dropped — keeping it would list every repo
 		// on that account, including ones they cannot see.
@@ -202,7 +202,7 @@ describe('GET /auth/callback', () => {
 		});
 		await handleAuth(req, makeEnv(db));
 
-		const grants = writes.filter((w) => w.sql.includes('INSERT INTO user_installations'));
+		const grants = writes.filter((w) => w.sql.includes('INSERT OR IGNORE INTO user_installations'));
 		// Installation 1 is authorized, so it is an admin row. Installation 2 is
 		// not authorized, but the invite makes it a read-only row — never admin.
 		expect(grants.map((w) => [w.args[1], w.args[4]])).toEqual([

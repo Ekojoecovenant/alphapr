@@ -224,3 +224,32 @@ describe('invitedInstallations', () => {
 		expect(await invitedInstallations(fake.db, 'nobody')).toEqual([]);
 	});
 });
+
+describe('step-up on the teammate routes', () => {
+	it('sends a stale session back through GitHub instead of applying the change', async () => {
+		// Older than the 24h step-up window, inside the 7-day absolute cap.
+		const old = '2026-11-08 09:00:00';
+		const fake = makeFakeDb({
+			sessions: [
+				{
+					session_id: 'sid',
+					created_at: old,
+					last_used_at: null,
+					expires_at: FUTURE,
+					github_id: 4242,
+					login: 'ekojoecovenant',
+					avatar_url: null,
+				},
+			],
+			access: { '4242:12': { role: 'admin', account_login: 'acme', account_type: 'Organization' } },
+			installationConfig: INSTALLATION,
+		});
+		const res = await handleDashboard(
+			await post({ action: 'add', login: 'octocat', csrf: await csrfToken('sid', SECRET) }),
+			makeEnv(fake.db),
+		);
+		expect(res?.status).toBe(302);
+		expect(res?.headers.get('Location')).toBe('/auth/github?next=%2Fdashboard%2Finstallations%2F12%2Fmembers');
+		expect(fake.writesStartingWith('INSERT OR IGNORE INTO members')).toHaveLength(0);
+	});
+});

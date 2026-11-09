@@ -343,6 +343,10 @@ async function handleInstallationRoute(request: Request, env: Env, installationI
 
 	const access = await accessFor(env, user.githubId, installationId);
 	if (!access) return messagePage('Not found', 'That installation is not one you can see.', 404);
+
+	// Same step-up as the other write routes: a stale session goes back through
+	// GitHub before it can change who has access.
+	if (sessionIsStale(user)) return stepUpResponse(request);
 	// The router already answers 405 for every method but POST; the check is
 	// spelled out anyway so this reads as a write gate without tracing the router.
 	if (request.method === 'POST' && sessionIsStale(user)) return stepUpResponse(request);
@@ -501,6 +505,10 @@ async function handleMembersRoute(request: Request, env: Env, installationId: nu
 
 	const access = await accessFor(env, user.githubId, installationId);
 	if (!access) return messagePage('Not found', 'That installation is not one you can see.', 404);
+
+	// Same step-up as the other write routes: a stale session goes back through
+	// GitHub before it can change who has access.
+	if (sessionIsStale(user)) return stepUpResponse(request);
 
 	const form = await request.formData().catch(() => null);
 	if (!form) return messagePage('Not saved', 'The form could not be read. Try again.', 400);
