@@ -3,6 +3,22 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.9.1] — 2026-11-09
+
+Patch release: the five findings AlphaPR raised against its own PRs #46 and #49, fixed.
+
+### Fixed
+
+- **Sign out works again.** The top-bar form posted to `/auth/logout` without a CSRF token, so `verifyCsrf` rejected it every time and the button was a guaranteed 403. `ShellOptions` now carries `csrf`, and the form is not rendered when there is no token to send (PR #46, major)
+- **Sessions expire after 30 days of *not* being used.** The deadline was written once at sign-in and never moved, so the README's "30 days idle" described a behaviour the code did not have. Each touch now slides `expires_at` alongside `last_used_at`, and every authenticated dashboard response re-issues the cookie so its `Max-Age` follows the same clock (PR #46, minor)
+- **Enter now saves instead of wiping.** "Reset to inherit" came first in tree order, so pressing Enter in any text field submitted the destructive button. Save is first in the DOM; visual order is preserved with `flex-direction: row-reverse` (PR #49, major)
+- A path with a malformed escape (`%zz`) answers 404 instead of throwing out of `decodeURIComponent` into a 500 (PR #49, minor)
+- `severity_threshold` and `review_tone` are validated on POST against the values `src/review-config.ts` actually understands, so a crafted form cannot store a threshold that quietly means nothing (PR #49, minor)
+- The "overridden" badge now appears on the severity and tone selects, not only on provider, model and ignored paths (PR #49, minor)
+
+### Tests
+
+- 249 passing, up from 243: six regression tests in `test/dashboard-writes.spec.ts` (CSRF in the sign-out form, Save-before-Reset order, malformed path, two validation refusals, both new badges) and one in `test/auth.spec.ts` asserting the touch also slides `expires_at`
 ## [v1.9.0] — 2026-11-09
 
 ### Added

@@ -6,7 +6,7 @@
 // rule `getAuthorizedInstallations` already applies at sign-in (own install or
 // org admin). CSRF is a double-submit token bound to the session.
 
-import { csrfToken, getSessionUser, verifyCsrf } from './auth';
+import { csrfToken, getSessionUser, sessionCookie, verifyCsrf } from './auth';
 import { type DashboardInstallation, dashboardPage, repoSettingsPage, signInPage } from './dashboard-pages';
 import { createAppJWT, getInstallationToken } from './github/auth';
 import {
@@ -14,11 +14,22 @@ import {
 	getRepoOverride,
 	loadInstallationDefaults,
 	loadRepoConfig,
+	REVIEW_TONES,
 	type RepoOverridePatch,
+	SEVERITY_THRESHOLDS,
 	saveRepoOverride,
 } from './review-config';
 
 const GITHUB_API = 'https://api.github.com';
+
+/** decodeURIComponent throws on malformed input (`%zz`); a bad path is a 404, not a 500. */
+function safeDecode(value: string): string | null {
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		return null;
+	}
+}
 
 interface InstallationRow {
 	installation_id: number;
@@ -188,8 +199,11 @@ async function handleRepoRoute(request: Request, env: Env, installationId: numbe
 		return messagePage('Not found', 'That installation is not one you can see.', 404);
 	}
 
-	const owner = decodeURIComponent(rawOwner);
-	const name = decodeURIComponent(rawName);
+	const owner = safeDecode(rawOwner);
+	const name = safeDecode(rawName);
+	if (owner === null || name === null) {
+		return messagePage('Not found', 'That repository path is not valid.', 404);
+	}
 
 	let repo: GitHubRepo | null;
 	try {
@@ -233,12 +247,26 @@ async function handleRepoRoute(request: Request, env: Env, installationId: numbe
 			return trimmed === '' ? null : trimmed;
 		};
 
+		// A crafted form could carry anything; only the values the review path
+		// understands may be stored, or the row would quietly mean nothing.
+		const choice = <T extends string>(key: string, allowed: readonly T[], label: string): T | null | Response => {
+			const raw = text(key);
+			if (raw === null) return null;
+			if ((allowed as readonly string[]).includes(raw)) return raw as T;
+			return messagePage('Not saved', `${label} has to be one of ${allowed.join(', ')}.`, 400);
+		};
+
+		const severityThreshold = choice('severity_threshold', SEVERITY_THRESHOLDS, 'Severity threshold');
+		if (severityThreshold instanceof Response) return severityThreshold;
+		const reviewTone = choice('review_tone', REVIEW_TONES, 'Review tone');
+		if (reviewTone instanceof Response) return reviewTone;
+
 		const patch: RepoOverridePatch = {
 			enabled: form.get('enabled') === 'on' || form.get('enabled') === '1',
 			provider: text('provider'),
 			model: text('model'),
-			severityThreshold: text('severity_threshold'),
-			reviewTone: text('review_tone'),
+			severityThreshold,
+			reviewTone,
 			ignorePaths: text('ignore_paths'),
 		};
 
@@ -255,7 +283,7 @@ async function handleRepoRoute(request: Request, env: Env, installationId: numbe
 	const csrf = await csrfToken(user.sessionId, env.SETUP_SIGNING_SECRET);
 	const saved = new URL(request.url).searchParams.get('saved');
 
-	return html(
+	const response = html(
 		repoSettingsPage({
 			user,
 			csrf,
@@ -270,6 +298,8 @@ async function handleRepoRoute(request: Request, env: Env, installationId: numbe
 			override: await getRepoOverride(env.DB, installationId, canonical.owner, canonical.name),
 		}),
 	);
+	response.headers.append('Set-Cookie', sessionCookie(request, user.sessionId));
+	return response;
 }
 
 const REPO_ROUTE = /^\/dashboard\/installations\/(\d+)\/repos\/([^/]+)\/([^/]+)$/;
@@ -314,5 +344,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
 		);
 	}
 
-	return html(dashboardPage({ user, csrf, installations }));
+	const response = html(dashboardPage({ user, csrf, installations }));
+	response.headers.append('Set-Cookie', sessionCookie(request, user.sessionId));
+	return response;
 }

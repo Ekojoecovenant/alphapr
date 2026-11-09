@@ -226,6 +226,8 @@ describe('getSessionUser', () => {
 		const user = await getSessionUser(req, makeEnv(db));
 		expect(user).toMatchObject({ sessionId: 'sid', githubId: 7, login: 'ekojoecovenant' });
 		expect(writes.some((w) => w.sql.includes('UPDATE sessions SET last_used_at'))).toBe(true);
+		// Sliding expiry: the deadline must move with the stamp, or '30 days idle' is a lie.
+		expect(writes.some((w) => w.sql.includes("expires_at = datetime('now', ?)"))).toBe(true);
 	});
 
 	it('does not write on every request when last_used_at is fresh', async () => {
