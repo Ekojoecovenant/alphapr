@@ -13,6 +13,8 @@ vi.mock('../src/db', () => ({
 	getReviewState: vi.fn(),
 	saveReviewState: vi.fn(async () => undefined),
 	recordReview: vi.fn(async () => undefined),
+	markReviewSuccess: vi.fn(async () => undefined),
+	markReviewFailure: vi.fn(async () => undefined),
 }));
 
 vi.mock('../src/review-config', () => ({
@@ -30,7 +32,7 @@ vi.mock('../src/github/api', () => ({
 	markCheckRunRetrying: vi.fn(async () => undefined),
 }));
 
-import { getReviewState, recordReview, saveReviewState } from '../src/db';
+import { getReviewState, markReviewFailure, markReviewSuccess, recordReview, saveReviewState } from '../src/db';
 import { completeCheckRun, editComment, getFailedCheckRuns } from '../src/github/api';
 import { loadRepoConfig } from '../src/review-config';
 import { handlePREvent, sanitizeDetail, surfaceFailure } from '../src/review-handler';
@@ -63,6 +65,8 @@ const env = {
 
 const mockedLoadRepoConfig = vi.mocked(loadRepoConfig);
 const mockedGetReviewState = vi.mocked(getReviewState);
+const mockedMarkReviewSuccess = vi.mocked(markReviewSuccess);
+const mockedMarkReviewFailure = vi.mocked(markReviewFailure);
 const mockedEditComment = vi.mocked(editComment);
 const mockedCompleteCheckRun = vi.mocked(completeCheckRun);
 const mockedGetFailedCheckRuns = vi.mocked(getFailedCheckRuns);
@@ -236,6 +240,8 @@ describe('handlePREvent — token usage', () => {
 				usage: { inputTokens: 9000, outputTokens: 3000 },
 			}),
 		);
+		// The dashboard banner reads these columns; nothing wrote them before.
+		expect(mockedMarkReviewSuccess).toHaveBeenCalledWith(expect.anything(), 1);
 	});
 
 	it('reports the token count in the check run summary', async () => {
@@ -301,6 +307,16 @@ describe('surfaceFailure', () => {
 		const [, , , , text] = mockedEditComment.mock.calls[0];
 		expect(text).toContain("This won't be retried");
 		expect(text).toContain('> openrouter auth error: 403 Key limit exceeded');
+	});
+
+	it('records a terminal failure for the dashboard banner, and only a terminal one', async () => {
+		await surfaceFailure(makeJob(), env, true, false, 1, 3, 'openrouter auth error: 403 Key limit exceeded');
+		expect(mockedMarkReviewFailure).toHaveBeenCalledWith(expect.anything(), 1, null, expect.stringContaining('Key limit exceeded'));
+
+		vi.clearAllMocks();
+		// A retry that may still succeed must not flash a failure that then heals.
+		await surfaceFailure(makeJob(), env, false, true, 1, 3, 'temporary network blip');
+		expect(mockedMarkReviewFailure).not.toHaveBeenCalled();
 	});
 
 	it('surfaces the real OpenRouter key-limit body instead of a generic hint', async () => {

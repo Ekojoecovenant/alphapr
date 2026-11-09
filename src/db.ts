@@ -252,6 +252,31 @@ export async function invitedInstallations(db: D1Database, githubLogin: string):
 	return (rows.results ?? []).map((row) => row.installation_id);
 }
 
+/**
+ * The installation's health, for the dashboard banner. Nothing wrote these two
+ * columns before, so "last review never" was permanent and the failure banner
+ * could only ever fire from a manual edit.
+ */
+export async function markReviewSuccess(db: D1Database, installationId: number): Promise<void> {
+	await db
+		.prepare(
+			`UPDATE installations
+       SET last_review_at = datetime('now'), last_error_code = NULL, last_error_message = NULL, last_error_at = NULL
+       WHERE installation_id = ?`,
+		)
+		.bind(installationId)
+		.run();
+}
+
+export async function markReviewFailure(db: D1Database, installationId: number, code: string | null, message: string): Promise<void> {
+	await db
+		.prepare(
+			`UPDATE installations SET last_error_code = ?, last_error_message = ?, last_error_at = datetime('now')
+       WHERE installation_id = ?`,
+		)
+		.bind(code, message.slice(0, 300), installationId)
+		.run();
+}
 export async function upsertInstallation(db: D1Database, installationId: number, accountLogin: string): Promise<void> {
 	await db
 		.prepare(
