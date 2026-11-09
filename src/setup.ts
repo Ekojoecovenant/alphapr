@@ -57,6 +57,19 @@ interface RawInstallation {
 }
 
 /**
+ * Which installation the setup form is editing.
+ *
+ * `?installation=` names one explicitly; anything unrecognised (a stale
+ * bookmark, a removed installation, a non-numeric value) falls back to the
+ * first authorized installation so the page still renders something usable.
+ */
+export function pickInstallation<T extends { id: number }>(installations: T[], requested: string | null): T {
+	const wanted = Number(requested ?? '');
+	const match = Number.isFinite(wanted) ? installations.find((i) => i.id === wanted) : undefined;
+	return match ?? installations[0];
+}
+
+/**
  * GitHub's GET /user/installations returns installations the user has :read, :write,
  * OR :admin access to — which includes mere repository collaborators. That is NOT
  * sufficient authorization to reconfigure an installation's settings (model, API key,
@@ -191,10 +204,16 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 			return htmlResponse(noInstallationsPage());
 		}
 
+		// Several installations can be authorized at once, and the form only edits
+		// one. `?installation=` chooses it; anything unrecognised falls back to the
+		// first, so a stale bookmark still renders a working form rather than an
+		// empty one.
+		const selected = pickInstallation(installations, url.searchParams.get('installation'));
+
 		const existingConfig = await env.DB.prepare(
 			`SELECT model, severity_threshold, review_tone, ignore_paths, provider FROM installations WHERE installation_id = ?`,
 		)
-			.bind(installations[0].id)
+			.bind(selected.id)
 			.first<{
 				model: string;
 				severity_threshold: string;
@@ -214,7 +233,9 @@ export async function handleSetup(request: Request, env: Env): Promise<Response 
 		const payload = `${allowedPairs}|${exp}|${bindingDigest}`;
 		const formToken = `${payload}.${await hmacSign(payload, env.SETUP_SIGNING_SECRET)}`;
 
-		const options = installations.map((i) => `<option value="${i.id}">${esc(i.account.login)} (${i.id})</option>`).join('');
+		const options = installations
+			.map((i) => `<option value="${i.id}"${i.id === selected.id ? ' selected' : ''}>${esc(i.account.login)} (${i.id})</option>`)
+			.join('');
 
 		const page = htmlResponse(
 			configFormPage({
