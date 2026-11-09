@@ -246,9 +246,14 @@ export async function handleAuth(request: Request, env: Env): Promise<Response |
 
 		const sessionId = await createSession(env, me.id);
 
-		return redirect('/dashboard', {
-			'Set-Cookie': `${cookieHeader(request, SESSION_COOKIE, sessionId, SESSION_TTL_SECONDS)}; ${clearCookie(request, NONCE_COOKIE, '/auth')}`,
-		});
+		// Two cookies, two headers. Joining them with "; " makes the browser read
+		// the second one's attributes as part of the first — which turned the
+		// session cookie into a Max-Age=0 deletion and made sign-in look like a
+		// page refresh.
+		const response = new Response(null, { status: 302, headers: { Location: '/dashboard' } });
+		response.headers.append('Set-Cookie', cookieHeader(request, SESSION_COOKIE, sessionId, SESSION_TTL_SECONDS));
+		response.headers.append('Set-Cookie', clearCookie(request, NONCE_COOKIE, '/auth'));
+		return response;
 	}
 
 	// 3) Sign out: delete the row, clear the cookie. Real revocation, not a

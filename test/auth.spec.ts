@@ -144,10 +144,16 @@ describe('GET /auth/callback', () => {
 		expect(res?.status).toBe(302);
 		expect(res?.headers.get('Location')).toBe('/dashboard');
 
-		const setCookie = res?.headers.get('Set-Cookie') ?? '';
-		expect(setCookie).toContain(`${SESSION_COOKIE}=`);
-		expect(setCookie).toContain('HttpOnly');
-		expect(setCookie).toContain('Max-Age=2592000');
+		// Two cookies must travel as two headers. Sent as one, the browser reads
+		// the nonce-clearing Max-Age=0 as part of the session cookie and deletes
+		// the session immediately — sign-in then looks like a page refresh.
+		const cookies = res?.headers.getSetCookie() ?? [];
+		expect(cookies).toHaveLength(2);
+		const sessionCookieHeader = cookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`)) ?? '';
+		expect(sessionCookieHeader).toContain('HttpOnly');
+		expect(sessionCookieHeader).toContain('Max-Age=2592000');
+		expect(sessionCookieHeader).not.toContain('Max-Age=0');
+		expect(cookies.some((c) => c.startsWith('alphapr_auth_nonce=') && c.includes('Max-Age=0'))).toBe(true);
 
 		const userWrite = writes.find((w) => w.sql.includes('INSERT INTO users'));
 		expect(userWrite?.args.slice(0, 2)).toEqual([4242, 'ekojoecovenant']);
