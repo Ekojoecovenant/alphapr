@@ -12,6 +12,7 @@ vi.mock('../src/crypto', () => ({
 vi.mock('../src/db', () => ({
 	getReviewState: vi.fn(),
 	saveReviewState: vi.fn(async () => undefined),
+	recordReview: vi.fn(async () => undefined),
 }));
 
 vi.mock('../src/review-config', () => ({
@@ -29,7 +30,7 @@ vi.mock('../src/github/api', () => ({
 	markCheckRunRetrying: vi.fn(async () => undefined),
 }));
 
-import { getReviewState, saveReviewState } from '../src/db';
+import { getReviewState, recordReview, saveReviewState } from '../src/db';
 import { completeCheckRun, editComment, getFailedCheckRuns } from '../src/github/api';
 import { loadRepoConfig } from '../src/review-config';
 import { handlePREvent, sanitizeDetail, surfaceFailure } from '../src/review-handler';
@@ -66,6 +67,7 @@ const mockedEditComment = vi.mocked(editComment);
 const mockedCompleteCheckRun = vi.mocked(completeCheckRun);
 const mockedGetFailedCheckRuns = vi.mocked(getFailedCheckRuns);
 const mockedSaveReviewState = vi.mocked(saveReviewState);
+const mockedRecordReview = vi.mocked(recordReview);
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -215,6 +217,25 @@ describe('handlePREvent — token usage', () => {
 			inputTokens: 9000,
 			outputTokens: 3000,
 		});
+	});
+
+	it('records the review in the history, separate from the per-PR memory', async () => {
+		mockedGetReviewState.mockResolvedValue(null);
+		stubHappyPath({ prompt_tokens: 9000, completion_tokens: 3000 });
+
+		await handlePREvent(makeJob({ action: 'opened' }), { ...env, QUEUE_MODE: 'false' } as Env);
+
+		expect(mockedRecordReview).toHaveBeenCalledTimes(1);
+		expect(mockedRecordReview).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				installationId: 1,
+				repoFullName: 'owner/repo',
+				prNumber: 7,
+				headSha: HEAD_SHA,
+				usage: { inputTokens: 9000, outputTokens: 3000 },
+			}),
+		);
 	});
 
 	it('reports the token count in the check run summary', async () => {

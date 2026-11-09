@@ -57,6 +57,140 @@ export async function saveReviewState(
 		.run();
 }
 
+// ─── Review history (ADR 0002, P2) ───
+//
+// `pr_reviews` is memory: one row per pull request, overwritten. This table is
+// the record of what actually happened, one row per posted review. Writes are
+// best-effort and happen after the review has already been posted, so a failure
+// here can never turn a successful review into a failed one.
+
+export interface ReviewEvent {
+	id: number;
+	installation_id: number;
+	repo_full_name: string;
+	pr_number: number;
+	head_sha: string;
+	provider: string | null;
+	model: string | null;
+	input_tokens: number | null;
+	output_tokens: number | null;
+	created_at: string;
+}
+
+export async function recordReview(
+	db: D1Database,
+	event: {
+		installationId: number;
+		repoFullName: string;
+		prNumber: number;
+		headSha: string;
+		provider: string | null;
+		model: string | null;
+		usage?: TokenUsage | null;
+	},
+): Promise<void> {
+	await db
+		.prepare(
+			`INSERT INTO review_history (installation_id, repo_full_name, pr_number, head_sha, provider, model, input_tokens, output_tokens)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			event.installationId,
+			event.repoFullName,
+			event.prNumber,
+			event.headSha,
+			event.provider,
+			event.model,
+			event.usage?.inputTokens ?? null,
+			event.usage?.outputTokens ?? null,
+		)
+		.run();
+}
+
+/** `IN (?, ?)` with one placeholder per id, or `NULL` when the list is empty. */
+function idList(installationIds: number[]): { placeholders: string; ids: number[] } {
+	return {
+		placeholders: installationIds.map(() => '?').join(', ') || 'NULL',
+		ids: installationIds,
+	};
+}
+
+export async function listReviewHistory(db: D1Database, installationIds: number[], limit = 50): Promise<ReviewEvent[]> {
+	if (installationIds.length === 0) return [];
+	const { placeholders, ids } = idList(installationIds);
+	const rows = await db
+		.prepare(
+			`SELECT id, installation_id, repo_full_name, pr_number, head_sha, provider, model,
+              input_tokens, output_tokens, created_at
+       FROM review_history
+       WHERE installation_id IN (${placeholders})
+       ORDER BY created_at DESC, id DESC
+       LIMIT ?`,
+		)
+		.bind(...ids, limit)
+		.all<ReviewEvent>();
+	return rows.results ?? [];
+}
+
+export interface UsageTotals {
+	reviews: number;
+	inputTokens: number;
+	outputTokens: number;
+}
+
+/** All-time totals across the installations the caller administers. */
+export async function loadUsageTotals(db: D1Database, installationIds: number[]): Promise<UsageTotals> {
+	if (installationIds.length === 0) return { reviews: 0, inputTokens: 0, outputTokens: 0 };
+	const { placeholders, ids } = idList(installationIds);
+	const row = await db
+		.prepare(
+			`SELECT COUNT(*) AS reviews,
+              COALESCE(SUM(input_tokens), 0) AS input_tokens,
+              COALESCE(SUM(output_tokens), 0) AS output_tokens
+       FROM review_history
+       WHERE installation_id IN (${placeholders})`,
+		)
+		.bind(...ids)
+		.first<{ reviews: number; input_tokens: number; output_tokens: number }>();
+	return {
+		reviews: row?.reviews ?? 0,
+		inputTokens: row?.input_tokens ?? 0,
+		outputTokens: row?.output_tokens ?? 0,
+	};
+}
+
+export interface UsageByModel {
+	model: string | null;
+	provider: string | null;
+	reviews: number;
+	inputTokens: number;
+	outputTokens: number;
+}
+
+export async function loadUsageByModel(db: D1Database, installationIds: number[]): Promise<UsageByModel[]> {
+	if (installationIds.length === 0) return [];
+	const { placeholders, ids } = idList(installationIds);
+	const rows = await db
+		.prepare(
+			`SELECT model, provider, COUNT(*) AS reviews,
+              COALESCE(SUM(input_tokens), 0) AS input_tokens,
+              COALESCE(SUM(output_tokens), 0) AS output_tokens
+       FROM review_history
+       WHERE installation_id IN (${placeholders})
+       GROUP BY model, provider
+       ORDER BY reviews DESC`,
+		)
+		.bind(...ids)
+		.all<{ model: string | null; provider: string | null; reviews: number; input_tokens: number; output_tokens: number }>();
+	return (rows.results ?? []).map((row) => ({
+		model: row.model,
+		provider: row.provider,
+		reviews: row.reviews,
+		inputTokens: row.input_tokens,
+		outputTokens: row.output_tokens,
+	}));
+}
+
 export async function upsertInstallation(db: D1Database, installationId: number, accountLogin: string): Promise<void> {
 	await db
 		.prepare(

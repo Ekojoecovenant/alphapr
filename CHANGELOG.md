@@ -3,6 +3,18 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.11.0] — 2026-11-09
+
+### Added
+
+- **Review history.** Every review AlphaPR posts is now recorded as an event — installation, repository, pull request, commit, provider, model, and the tokens the provider reported — in a new `review_history` table (`0015`). `/dashboard/reviews` lists them newest first with links back to the pull request. `pr_reviews` remains what it always was: a memory of the last SHA and body per pull request, overwritten on each pass, and therefore useless as a record of what happened
+- **`/dashboard/usage`.** Token totals across the installations you administer, broken down per model, with a cost estimate from a small static price table (`src/pricing.ts`, list prices per million tokens, recorded 2026-11). A model the table does not know shows tokens and no price — the page never invents a number, and it says plainly that the review call is counted while the optional PR summary is not
+- Dashboard navigation between the overview, reviews and usage, `estimateCost()`/`formatUsd()`/`priceFor()` in `src/pricing.ts`, and 15 tests for the history queries, the two pages, the routes and the pricing rules
+
+### Changed
+
+- The review pipeline writes history **after** the review is posted, in its own `try`/`catch`: a failed insert logs and moves on, because the comment is already on the pull request
+
 ## [v1.10.7] — 2026-11-09
 
 ### Fixed
