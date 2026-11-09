@@ -155,6 +155,14 @@ user's GitHub token:
    several admins). `account_type` lives on the snapshot row. If P2's review history needs a
    per-installation owner label, it can read it from `user_installations` where `role = 'admin'`.
 
+#### Narrowing recorded after P1 shipped (2026-11-09)
+
+The route table below says `POST /dashboard/test-review` — "queue a review of the installation
+owner's most recent open PR". What shipped is `POST /dashboard/installations/:id/test`, a single
+16-token provider call, because a real test review needs a pull-request payload the dashboard does
+not otherwise have, and would post a comment on somebody's branch to prove a point. The question
+people actually ask is "is my key working", and one call answers it without touching a PR. The
+narrower version also cannot be confused with a review that silently skipped.
 ### 3. Routes
 
 | Route | Method | Purpose |

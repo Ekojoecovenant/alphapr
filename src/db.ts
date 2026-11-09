@@ -81,3 +81,20 @@ export async function getInstallation(db: D1Database, installationId: number): P
 		.first<InstallationConfig>();
 	return row ?? null;
 }
+
+/**
+ * Replace the provider key for an installation. The plaintext never leaves this
+ * call: the caller passes ciphertext plus a four-character hint taken from the
+ * key, which is all the dashboard is allowed to show.
+ */
+export async function setInstallationKey(db: D1Database, installationId: number, apiKeyEncrypted: string, keyHint: string): Promise<void> {
+	await db
+		.prepare(
+			`UPDATE installations
+       SET api_key_encrypted = ?, key_hint = ?,
+           last_error_code = NULL, last_error_message = NULL, last_error_at = NULL
+       WHERE installation_id = ?`,
+		)
+		.bind(apiKeyEncrypted, keyHint, installationId)
+		.run();
+}

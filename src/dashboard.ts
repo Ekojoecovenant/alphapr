@@ -7,8 +7,12 @@
 // org admin). CSRF is a double-submit token bound to the session.
 
 import { csrfToken, getSessionUser, sessionCookie, verifyCsrf } from './auth';
+import { decryptSecret, encryptSecret } from './crypto';
 import { type DashboardInstallation, dashboardPage, repoSettingsPage, signInPage } from './dashboard-pages';
+import { setInstallationKey } from './db';
 import { createAppJWT, getInstallationToken } from './github/auth';
+import { parseProvider } from './review/provider-types';
+import { getAdapter } from './review/providers';
 import {
 	clearRepoOverride,
 	getRepoOverride,
@@ -19,6 +23,7 @@ import {
 	SEVERITY_THRESHOLDS,
 	saveRepoOverride,
 } from './review-config';
+import { sanitizeDetail } from './review-handler';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -39,6 +44,7 @@ interface InstallationRow {
 	provider: string | null;
 	model: string | null;
 	api_key_encrypted: string | null;
+	key_hint: string | null;
 	last_error_code: string | null;
 	last_error_message: string | null;
 	last_error_at: string | null;
@@ -71,7 +77,7 @@ async function listRepos(token: string, installationId: number): Promise<GitHubR
 async function loadInstallations(env: Env, userId: number): Promise<DashboardInstallation[]> {
 	const rows = await env.DB.prepare(
 		`SELECT ui.installation_id, ui.account_login, ui.account_type, ui.role,
-            i.provider, i.model, i.api_key_encrypted,
+            i.provider, i.model, i.api_key_encrypted, i.key_hint,
             i.last_error_code, i.last_error_message, i.last_error_at, i.last_review_at
      FROM user_installations ui
      LEFT JOIN installations i ON i.installation_id = ui.installation_id
@@ -116,6 +122,7 @@ async function loadInstallations(env: Env, userId: number): Promise<DashboardIns
 			provider: row.provider,
 			model: row.model,
 			hasKey: !!row.api_key_encrypted,
+			keyHint: row.key_hint ?? null,
 			lastError:
 				row.last_error_code || row.last_error_message || row.last_error_at
 					? { code: row.last_error_code, message: row.last_error_message, at: row.last_error_at }
@@ -302,6 +309,80 @@ async function handleRepoRoute(request: Request, env: Env, installationId: numbe
 	return response;
 }
 
+const INSTALLATION_ROUTE = /^\/dashboard\/installations\/(\d+)\/(key|test)$/;
+
+/**
+ * Two installation-level writes: replace the provider key, and prove the stored
+ * key + model still answer. Both are admin-only and CSRF-checked, like every
+ * other write on the dashboard.
+ */
+async function handleInstallationRoute(request: Request, env: Env, installationId: number, kind: 'key' | 'test'): Promise<Response> {
+	const user = await getSessionUser(request, env);
+	if (!user) return html(signInPage(), request.method === 'POST' ? 401 : 200);
+
+	const access = await accessFor(env, user.githubId, installationId);
+	if (!access) return messagePage('Not found', 'That installation is not one you can see.', 404);
+	if (access.role !== 'admin') {
+		return messagePage('Read-only', 'Your role on this installation is member, so you can look but not change anything.', 403);
+	}
+
+	const form = await request.formData();
+	if (!(await verifyCsrf(request, user.sessionId, env.SETUP_SIGNING_SECRET, form))) {
+		return messagePage('That form expired', 'Reload the page and try again — the anti-forgery token did not match.', 403);
+	}
+
+	const row = await env.DB.prepare('SELECT provider, model, api_key_encrypted, key_hint FROM installations WHERE installation_id = ?')
+		.bind(installationId)
+		.first<{ provider: string | null; model: string | null; api_key_encrypted: string | null; key_hint: string | null }>();
+	if (!row) return messagePage('Not configured', 'Run /setup for this installation first.', 404);
+
+	if (kind === 'key') {
+		const raw = form.get('api_key');
+		const key = typeof raw === 'string' ? raw.trim() : '';
+		if (key.length < 8) {
+			return messagePage('Not saved', 'That does not look like an API key — it is shorter than eight characters.', 400);
+		}
+		if (key.length > 400) {
+			return messagePage('Not saved', 'That key is longer than any provider issues.', 400);
+		}
+		const stored = await encryptSecret(key, env.KEY_ENCRYPTION_SECRET);
+		await setInstallationKey(env.DB, installationId, stored, `…${key.slice(-4)}`);
+		return redirect('/dashboard?saved=key');
+	}
+
+	if (!row.api_key_encrypted) {
+		return messagePage('No key yet', 'Store a provider key on this installation before testing it.', 400);
+	}
+	if (!row.provider || !row.model) {
+		return messagePage('Not configured', 'This installation has no provider or model set. Run /setup first.', 400);
+	}
+
+	const adapter = getAdapter(parseProvider(row.provider));
+	const started = Date.now();
+	try {
+		const key = await decryptSecret(row.api_key_encrypted, env.KEY_ENCRYPTION_SECRET);
+		const answer = await adapter.call(key, {
+			model: row.model,
+			systemPrompt: 'You are a connectivity check. Reply with the single word: ok',
+			userMessages: [{ role: 'user', content: 'ping' }],
+			maxTokens: 16,
+		});
+		const ms = Date.now() - started;
+		const said = answer.ok
+			? answer.data.content
+				? ` — replied ${answer.data.content.trim().slice(0, 40)}`
+				: ' — replied with no text'
+			: ` — HTTP ${answer.status}: ${answer.body.slice(0, 120)}`;
+		if (!answer.ok) {
+			return messagePage('Provider refused', `${row.provider} answered HTTP ${answer.status} for ${row.model}${said}.`, 502);
+		}
+		return messagePage('Provider answered', `${row.provider} answered in ${ms} ms using ${row.model}${said}.`, 200);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		console.error(`Dashboard: provider test failed for installation ${installationId}: ${message}`);
+		return messagePage('Provider refused', `${row.provider} did not answer (${sanitizeDetail(message)}).`, 502);
+	}
+}
 const REPO_ROUTE = /^\/dashboard\/installations\/(\d+)\/repos\/([^/]+)\/([^/]+)$/;
 
 /** Route handler for /dashboard*, or null for anything else. */
@@ -314,6 +395,14 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
 			return new Response('method not allowed', { status: 405, headers: { Allow: 'GET, POST' } });
 		}
 		return handleRepoRoute(request, env, Number(repoMatch[1]), repoMatch[2], repoMatch[3]);
+	}
+
+	const installationMatch = INSTALLATION_ROUTE.exec(pathname);
+	if (installationMatch) {
+		if (request.method !== 'POST') {
+			return new Response('method not allowed', { status: 405, headers: { Allow: 'POST' } });
+		}
+		return handleInstallationRoute(request, env, Number(installationMatch[1]), installationMatch[2] as 'key' | 'test');
 	}
 
 	if (pathname !== '/dashboard') {
