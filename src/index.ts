@@ -4,6 +4,7 @@ import { deleteInstallation, getReviewState, upsertInstallation } from './db';
 import { PermanentError } from './errors';
 import { createCheckRun, postReviewComment } from './github/api';
 import { createAppJWT, getInstallationToken } from './github/auth';
+import { shouldReviewRepo } from './review-config';
 import { decideReview, isReviewAction } from './review-gate';
 import { handlePREvent, type ReviewJob, surfaceFailure } from './review-handler';
 import { handleSetup } from './setup';
@@ -171,6 +172,13 @@ export default {
 
 			if (!decision.run) {
 				console.log(`⏭️ Skipping review for PR #${payload.number} (${decision.reason})`);
+				return new Response('ok', { status: 200 });
+			}
+
+			// A repo switched off on the dashboard is skipped silently: no status
+			// comment, no check run. Disabling should look like AlphaPR is not here.
+			if (!(await shouldReviewRepo(env.DB, payload.installation.id, payload.repository.owner.login, payload.repository.name))) {
+				console.log(`⏭️ Skipping review for ${payload.repository.full_name} (disabled on dashboard)`);
 				return new Response('ok', { status: 200 });
 			}
 
