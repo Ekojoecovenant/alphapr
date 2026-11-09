@@ -163,6 +163,21 @@ owner's most recent open PR". What shipped is `POST /dashboard/installations/:id
 not otherwise have, and would post a comment on somebody's branch to prove a point. The question
 people actually ask is "is my key working", and one call answers it without touching a PR. The
 narrower version also cannot be confused with a review that silently skipped.
+
+Two more deviations landed with it, both recorded here because they change the interface this ADR
+sketched:
+
+- **Repo settings are addressed by installation, not by repository name.** The sketch had
+  `/dashboard/repos/:owner/:name`. That path cannot resolve which installation owns the repo without a
+  second GitHub call, and an unverified name would let a crafted path create a `repos` row for a
+  repository the installation cannot see. The shipped route is
+  `/dashboard/installations/:id/repos/:owner/:name`, and the POST re-checks the repository against
+  `GET /installation/repositories` before writing.
+- **Review memory moved to a tenant key.** `pr_reviews` was keyed `(repo_full_name, pr_number)`; two
+  installations carrying the same `owner/name` shared a row. Migration `0014` re-keys it on
+  `(installation_id, repo_full_name, pr_number)`, and P2's backfill therefore has nothing to backfill —
+  rows written before the change carry `installation_id = 0` and are treated as belonging to nobody.
+
 ### 3. Routes
 
 | Route | Method | Purpose |
@@ -190,16 +205,20 @@ flag from `repos`; health banner fed by `last_error_*`. No writes yet. Acceptanc
 Ekojoecovenant account and see all three installations and their real repos; a non-admin sees the
 same page without edit controls.
 
-**P1 — writes + key management (~1 PR).**
-Per-repo enable/disable and overrides; key replacement; `test-review`. `src/index.ts` stops ignoring
-`repos.enabled` and per-repo overrides: `shouldReviewRepo()` + `resolveRepoConfig()` where the
-installation row is today. Acceptance: turning a repo off suppresses the review and the status
-comment says so; a review triggered from the dashboard appears in history with tokens.
+**P1 — writes + key management (~1 PR).** ✅ *Shipped in v1.9.0 (PR #49), v1.10.0 (PR #51), v1.10.2 (PR #53), v1.10.4 (PR #55), v1.10.5 (PR #56).*
+Per-repo enable/disable and overrides; key replacement; a connection test in place of `test-review` (see
+"Narrowing recorded after P1"). `src/index.ts` no longer ignores `repos.enabled` and per-repo overrides:
+`shouldReviewRepo()` + `loadRepoConfig()` run before any GitHub call. Acceptance, as actually met: turning
+a repo off suppresses the review *silently* — no status comment, no check run (the owner chose silence over
+an announcement, which is the one place this ADR's original wording was changed by decision rather than by
+constraint); a member can read every page the installation admin can and write none of them.
 
 **P2 — history + usage (~1 PR).**
-Backfill `installation_id` / counts on `pr_reviews` from existing rows where possible; `/dashboard/reviews`
-and `/dashboard/usage`; per-review token cost rendered with the model's price table (config file,
-not an API call). Acceptance: the 186 existing reviews are browsable and the usage page matches D1.
+`/dashboard/reviews` and `/dashboard/usage`; per-review token cost rendered with the model's price table
+(config file, not an API call). Acceptance: recent reviews are browsable with their token counts, and the
+usage page matches D1. (The original sketch also promised a backfill of `installation_id` on existing
+rows; migration `0014` already re-keyed the table, and pre-existing memory is deliberately unattributed,
+so there is nothing left to backfill — see "Narrowing recorded after P1".)
 
 **P3 — teams (~1 PR).**
 Roles: owner/admin (from GitHub), member (read-only), plus an explicit `members` table so a
