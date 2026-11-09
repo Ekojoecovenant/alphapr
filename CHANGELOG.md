@@ -3,6 +3,14 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.10.1] — 2026-11-09
+
+Signing in with GitHub worked — the redirect, the code exchange and the session row were all correct — but the browser never kept the cookie, so `/dashboard` kept showing the sign-in page and the button looked like it did nothing.
+
+### Fixed
+
+- **The session cookie now travels in its own `Set-Cookie` header.** The callback returned two cookies joined by `"; "` inside a single header, so the browser parsed the nonce-clearing cookie's `Max-Age=0` as an attribute of the session cookie and deleted the session the moment it was created (`src/auth.ts`). The response now appends one header per cookie, and the happy-path callback test asserts exactly two `Set-Cookie` values, the session one carrying `Max-Age=2592000` and no `Max-Age=0`
+
 ## [v1.10.0] — 2026-11-09
 
 Phase P1 is complete: the dashboard can now do everything the setup form could, and one thing it could not.
