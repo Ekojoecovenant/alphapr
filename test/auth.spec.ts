@@ -171,6 +171,46 @@ describe('GET /auth/callback', () => {
 		expect(String(sessionWrite?.args[2])).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
 	});
 
+	it('grants a read-only row only to logins an admin invited', async () => {
+		// ForXed is an org this user is merely a member of, so it is not
+		// authorized — but an admin invited their login, which is exactly the
+		// case the `members` table exists for.
+		const { db, writes } = makeFakeDb({
+			members: { 2: [{ github_login: 'Ekojoecovenant', added_by: 'acme-admin', created_at: '2026-11-09 10:00:00' }] },
+		});
+		const { state, nonce } = await stateAndNonce();
+
+		mockFetch((url) => {
+			if (url === 'https://github.com/login/oauth/access_token') {
+				return new Response(JSON.stringify({ access_token: 'gho_user_token' }), { status: 200 });
+			}
+			if (url === 'https://api.github.com/user') return ghUser();
+			if (url === 'https://api.github.com/user/installations') {
+				return ghInstallations([
+					{ id: 1, account: { login: 'ekojoecovenant', type: 'User' } },
+					{ id: 2, account: { login: 'ForXed', type: 'Organization' } },
+				]);
+			}
+			if (url.startsWith('https://api.github.com/orgs/ForXed/memberships/')) {
+				return new Response(JSON.stringify({ role: 'member', state: 'active' }), { status: 200 });
+			}
+			return undefined;
+		});
+
+		const req = new Request(`${ORIGIN}/auth/callback?code=abc&state=${state}`, {
+			headers: { Cookie: `alphapr_auth_nonce=${nonce}` },
+		});
+		await handleAuth(req, makeEnv(db));
+
+		const grants = writes.filter((w) => w.sql.includes('INSERT INTO user_installations'));
+		// Installation 1 is authorized, so it is an admin row. Installation 2 is
+		// not authorized, but the invite makes it a read-only row — never admin.
+		expect(grants.map((w) => [w.args[1], w.args[4]])).toEqual([
+			[1, 'admin'],
+			[2, 'member'],
+		]);
+	});
+
 	it('shows a clear error when GitHub refuses the token exchange', async () => {
 		const { db } = makeFakeDb();
 		const { state, nonce } = await stateAndNonce();

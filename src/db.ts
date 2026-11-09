@@ -13,6 +13,12 @@ export interface InstallationConfig {
 	provider: string;
 }
 
+export interface MemberRow {
+	github_login: string;
+	added_by: string;
+	created_at: string;
+}
+
 // HELPER FUNCTIONS
 
 export async function getReviewState(
@@ -205,6 +211,45 @@ export async function countReviewHistory(db: D1Database, installationIds: number
 		.bind(...ids)
 		.first<{ reviews: number }>();
 	return row?.reviews ?? 0;
+}
+
+// TEAMMATES
+//
+// An invite is a login, not a user id: the person may not have signed in yet.
+// The grant is materialised at sign-in, and only for installations GitHub still
+// lists for that account, so losing repo access loses the view on next sign-in.
+
+export async function listMembers(db: D1Database, installationId: number): Promise<MemberRow[]> {
+	const rows = await db
+		.prepare('SELECT github_login, added_by, created_at FROM members WHERE installation_id = ? ORDER BY lower(github_login)')
+		.bind(installationId)
+		.all<MemberRow>();
+	return rows.results ?? [];
+}
+
+/** Returns false when the invite already existed — the UI can say so instead of duplicating. */
+export async function addMember(db: D1Database, installationId: number, githubLogin: string, addedBy: string): Promise<boolean> {
+	const result = await db
+		.prepare('INSERT OR IGNORE INTO members (installation_id, github_login, added_by) VALUES (?, ?, ?)')
+		.bind(installationId, githubLogin, addedBy)
+		.run();
+	return (result.meta.changes ?? 0) > 0;
+}
+
+export async function removeMember(db: D1Database, installationId: number, githubLogin: string): Promise<void> {
+	await db
+		.prepare('DELETE FROM members WHERE installation_id = ? AND lower(github_login) = lower(?)')
+		.bind(installationId, githubLogin)
+		.run();
+}
+
+/** Installation ids this login has been invited to. Compared case-insensitively. */
+export async function invitedInstallations(db: D1Database, githubLogin: string): Promise<number[]> {
+	const rows = await db
+		.prepare('SELECT installation_id FROM members WHERE lower(github_login) = lower(?)')
+		.bind(githubLogin)
+		.all<{ installation_id: number }>();
+	return (rows.results ?? []).map((row) => row.installation_id);
 }
 
 export async function upsertInstallation(db: D1Database, installationId: number, accountLogin: string): Promise<void> {

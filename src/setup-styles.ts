@@ -392,6 +392,19 @@ a.repo-name:hover { border-bottom-color: var(--line-strong); }
 }
 .inst-tools input[type="password"]:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
 .inst-tools .field-help { flex-basis: 100%; margin: 2px 0 0; }
+.inst-team { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.inst-team .field-help { margin: 4px 0 12px; }
+.member-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.member { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-2); }
+.member-name { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); }
+.member form { margin-left: auto; }
+.member-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.member-add .kicker { width: 100%; }
+.member-add input {
+  flex: 1 1 200px; min-width: 160px; padding: 9px 11px; font: inherit; font-size: 13px;
+  color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 10px;
+}
+.member-add input:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
 .dash-nav { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 22px 0 0; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper-2); width: fit-content; }
 .nav-link { padding: 7px 14px; border-radius: 999px; font-size: 12px; letter-spacing: 0.02em; color: var(--ink-2); text-decoration: none; }
 .nav-link:hover { color: var(--ink); background: var(--paper-3); }
