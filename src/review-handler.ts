@@ -1,5 +1,5 @@
 import { decryptSecret } from './crypto';
-import { getReviewState, recordReview, saveReviewState } from './db';
+import { getReviewState, markReviewFailure, markReviewSuccess, recordReview, saveReviewState } from './db';
 import { PermanentError } from './errors';
 import {
 	completeCheckRun,
@@ -70,6 +70,16 @@ export async function surfaceFailure(
 			await editComment(token, job.owner, job.repo, job.statusCommentId, commentText);
 		} catch {
 			/* fall through to check-run update */
+		}
+	}
+
+	// Terminal failures are what the dashboard banner is for. A retry that may
+	// still succeed is not: recording it would flash a failure that then heals.
+	if (!willRetry) {
+		try {
+			await markReviewFailure(env.DB, job.installationId, null, reason || 'The review failed.');
+		} catch (err) {
+			console.error(`Failed to record the installation failure: ${err instanceof Error ? err.message : err}`);
 		}
 	}
 
@@ -375,6 +385,13 @@ export async function handlePREvent(job: ReviewJob, env: Env): Promise<void> {
 		console.error(`Failed to record review history (review already posted): ${err instanceof Error ? err.message : err}`);
 	}
 
+	// Keep the installation's health current: the banner on the dashboard reads
+	// exactly these columns, and a stale "last review never" is a lie.
+	try {
+		await markReviewSuccess(env.DB, job.installationId);
+	} catch (err) {
+		console.error(`Failed to mark the review successful (review already posted): ${err instanceof Error ? err.message : err}`);
+	}
 	if (env.QUEUE_MODE === 'true') {
 		try {
 			let fullDiffForSummary = diff;

@@ -3,6 +3,18 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.12.0] — 2026-11-09
+
+### Added
+
+- **Read-only teammates.** Until now the dashboard was admin-only, which excluded exactly the people who want to look: someone who pushes to the repositories but does not administer the account. An administrator can now invite a GitHub login on the installation card. The invite is a row in `members` (`0016`) — nothing is emailed and no seat is reserved — and it becomes a `member` grant the next time that person signs in, for installations GitHub still lists for them. Losing repository access therefore loses the view on the next sign-in, without AlphaPR tracking teams or repo permissions.
+- A member sees every page an administrator sees, with the controls rendered but inert, and the card says `member · read-only`.
+
+### Changed
+
+- The dashboard no longer filters to `role = 'admin'`: a stored `member` row is now a legitimate invite rather than a sign-in artefact. The leak that row type used to represent is still prevented where it belongs — sign-in writes admin rows only for installations the user actually administers, and member rows only for logins an admin invited.
+- Signed-in writes made from a session older than a day now step up through GitHub before they land, which already covered repo settings and the provider key; the new teammate routes sit behind the same gates (session → access → admin → CSRF).
+
 ## [v1.11.0] — 2026-11-09
 
 ### Added

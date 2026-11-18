@@ -24,6 +24,8 @@ export interface FakeDbSeed {
 	repoOverrides?: Record<string, Record<string, unknown>>;
 	/** The `user_installations` row a write authorizes against, keyed `"<userId>:<installationId>"`. */
 	access?: Record<string, { role: string; account_login: string; account_type: string }>;
+	/** Invited teammates, keyed by installation id, for the P3 queries. */
+	members?: Record<number, Array<{ github_login: string; added_by: string; created_at: string }>>;
 	/** Rows changed by every `run()`; defaults to 1. Set to 0 to fake a no-op update. */
 	changes?: number;
 	/** Rows the P2 review-history queries read. */
@@ -111,6 +113,22 @@ export function makeFakeDb(seed: FakeDbSeed = {}): FakeDb {
 						// test pass while the leak is still open.
 						const scoped = /role = 'admin'/.test(sql) ? rows.filter((row) => (row.role ?? 'admin') === 'admin') : rows;
 						return result(scoped as T[]) as never;
+					}
+					if (/FROM members WHERE installation_id = \?/.test(sql)) {
+						const rows = seed.members?.[Number(args[0])] ?? [];
+						return result(
+							[...rows].sort((a, b) => a.github_login.toLowerCase().localeCompare(b.github_login.toLowerCase())) as T[],
+						) as never;
+					}
+					if (/FROM members WHERE lower\(github_login\)/.test(sql)) {
+						// Sign-in asks which installations this login was invited to.
+						const login = String(args[0]).toLowerCase();
+						const rows = Object.entries(seed.members ?? {}).flatMap(([installationId, members]) =>
+							members
+								.filter((member) => member.github_login.toLowerCase() === login)
+								.map(() => ({ installation_id: Number(installationId) })),
+						);
+						return result(rows as T[]) as never;
 					}
 					if (/FROM repos WHERE installation_id/.test(sql)) {
 						return result((seed.repos?.[Number(args[0])] ?? []) as T[]) as never;

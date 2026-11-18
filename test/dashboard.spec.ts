@@ -112,17 +112,21 @@ describe('GET /dashboard when signed in', () => {
 		expect(html).toContain('2026-11-04 19:52');
 	});
 
-	it('never renders an installation the user only has member access to', async () => {
+	it('renders an invited member installation read-only, never with write controls', async () => {
+		// A `member` row only exists because an admin invited that login (auth.ts
+		// stores nothing else), so it is legitimately visible — but every control
+		// that writes must be disabled, and the label must say what it is.
 		const { db } = signedInDb([installation({ account_login: 'ForXed', account_type: 'Organization', role: 'member' })]);
 		const fetched: string[] = [];
 		mockRepoList({ 1: [{ full_name: 'ForXed/api', private: true, archived: false }] }, fetched);
 
 		const html = await (await handleDashboard(dashboardRequest(), makeEnv(db)))?.text();
-		// The account, its repos and even its existence must not reach the page:
-		// listing it would expose every repository the installation can see.
-		expect(html).not.toContain('ForXed');
-		expect(html).not.toContain('ForXed/api');
-		expect(fetched).toHaveLength(0);
+		expect(html).toContain('ForXed');
+		expect(html).toContain('member · read-only');
+		// Every write control is rendered, and rendered inert.
+		expect(html).toContain('disabled>Save key</button>');
+		expect(html).toContain('disabled>Add teammate</button>');
+		expect(html).not.toContain('type="submit">Save key</button>');
 	});
 
 	it('surfaces the last provider failure in a banner', async () => {
