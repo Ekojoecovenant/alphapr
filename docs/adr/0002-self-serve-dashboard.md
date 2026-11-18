@@ -229,7 +229,7 @@ when the id *is* that model or that model plus a version suffix, and returns `nu
 fine-tune whose name contains a known model is a different product at a different price, and a review with
 only one of its two token counts recorded is not priced at all rather than being costed with a zero.
 
-**P3 — teams (~2 PRs).** ✅ *First slice shipped in v1.12.0 (PR #61); the audit log in v1.13.0 (PR #62).*
+**P3 — teams (~2 PRs).** ✅ *First slice shipped in v1.12.0 (PR #61); the audit log in v1.13.0 (PR #64).*
 Roles: owner/admin (from GitHub), member (read-only), plus an explicit `members` table so a
 non-GitHub-admin teammate can be invited read-only. Seats are a count, not a limit, until there is a
 billing story. Audit log table: who changed what, when.
