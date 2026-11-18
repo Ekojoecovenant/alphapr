@@ -227,8 +227,10 @@ describe('invitedInstallations', () => {
 
 describe('step-up on the teammate routes', () => {
 	it('sends a stale session back through GitHub instead of applying the change', async () => {
-		// Older than the 24h step-up window, inside the 7-day absolute cap.
-		const old = '2026-11-08 09:00:00';
+		// Older than the 24h step-up window, inside the 7-day absolute cap — and
+		// relative to now, because a hardcoded date silently ages out of the cap
+		// and turns this test into a passing no-op a week later.
+		const old = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
 		const fake = makeFakeDb({
 			sessions: [
 				{
