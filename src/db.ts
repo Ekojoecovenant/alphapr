@@ -252,6 +252,63 @@ export async function invitedInstallations(db: D1Database, githubLogin: string):
 	return (rows.results ?? []).map((row) => row.installation_id);
 }
 
+// AUDIT
+//
+// Every dashboard write records one row: who, what, which thing, and what
+// changed. Fire-and-forget in the sense that a failed insert must not swallow
+// the write it describes — but it is *not* silent: the caller logs the failure,
+// because an audit trail with holes should be visible rather than trusted.
+
+export interface AuditEntry {
+	installationId: number;
+	actorLogin: string;
+	action: string;
+	target: string;
+	detail?: Record<string, unknown> | null;
+}
+
+export interface AuditRow {
+	installation_id: number;
+	actor_login: string;
+	action: string;
+	target: string;
+	detail: string | null;
+	created_at: string;
+}
+
+export async function recordAudit(db: D1Database, entry: AuditEntry): Promise<void> {
+	const detail = entry.detail ? JSON.stringify(entry.detail) : null;
+	await db
+		.prepare('INSERT INTO audit_log (installation_id, actor_login, action, target, detail) VALUES (?, ?, ?, ?, ?)')
+		.bind(entry.installationId, entry.actorLogin, entry.action, entry.target, detail)
+		.run();
+}
+
+export async function listAuditLog(db: D1Database, installationIds: number[], limit = 50): Promise<AuditRow[]> {
+	if (installationIds.length === 0) return [];
+	const { placeholders, ids } = idList(installationIds);
+	const rows = await db
+		.prepare(
+			`SELECT installation_id, actor_login, action, target, detail, created_at
+       FROM audit_log WHERE installation_id IN (${placeholders})
+       ORDER BY created_at DESC, id DESC LIMIT ?`,
+		)
+		.bind(...ids, limit)
+		.all<AuditRow>();
+	return rows.results ?? [];
+}
+
+/** How many entries exist, so a capped list can say what it is capped from. */
+export async function countAuditLog(db: D1Database, installationIds: number[]): Promise<number> {
+	if (installationIds.length === 0) return 0;
+	const { placeholders, ids } = idList(installationIds);
+	const row = await db
+		.prepare(`SELECT COUNT(*) AS entries FROM audit_log WHERE installation_id IN (${placeholders})`)
+		.bind(...ids)
+		.first<{ entries: number }>();
+	return row?.entries ?? 0;
+}
+
 /**
  * The installation's health, for the dashboard banner. Nothing wrote these two
  * columns before, so "last review never" was permanent and the failure banner

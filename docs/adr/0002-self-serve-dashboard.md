@@ -229,10 +229,41 @@ when the id *is* that model or that model plus a version suffix, and returns `nu
 fine-tune whose name contains a known model is a different product at a different price, and a review with
 only one of its two token counts recorded is not priced at all rather than being costed with a zero.
 
-**P3 — teams (~1 PR).**
+**P3 — teams (~2 PRs).** ✅ *First slice shipped in v1.12.0 (PR #61); the audit log in v1.13.0 (PR #62).*
 Roles: owner/admin (from GitHub), member (read-only), plus an explicit `members` table so a
 non-GitHub-admin teammate can be invited read-only. Seats are a count, not a limit, until there is a
 billing story. Audit log table: who changed what, when.
+
+What shipped, and what deviates:
+
+- The `members` table stores a GitHub **login**, not a `users.id`, because an invited teammate may
+  never have signed in — there would be no row to point at. The grant is therefore re-applied at each
+  sign-in, and it is re-checked against GitHub's own installation list, so losing access to the
+  repositories loses the view without anyone having to remember to revoke it.
+- "Member" was already a role in `user_installations`; v1.10.2 had narrowed the dashboard to
+  `role = 'admin'` *because that column was previously written for installations a user could only
+  partly see*. Invites are now the only way a member row is created, and the filter is
+  `role IN ('admin','member')` again — the leak is prevented where it was always prevented, in
+  `src/auth.ts`, by only granting installations from `getAuthorizedInstallations`.
+- Members see the installation, its settings and its team, with every write control rendered
+  `disabled`; the write routes still return 403 for a member and never trust the page.
+- **Audit log — shipped v1.13.0.** `audit_log` records `installation_id`, `actor_login`, `action`,
+  `target`, and a `detail` JSON blob, written from all four write routes: `repo.updated`,
+  `repo.reset`, `key.replaced`, `member.added`, `member.removed`. Two decisions worth keeping: the
+  detail carries **only fields whose value actually changed**, each as `{from, to}`, so the page reads
+  as a diff rather than a dump of the row; and a key replacement records the same last-four hint the
+  card renders, never the key. A failed audit write is logged loudly and does not roll back the change
+  it describes — the alternative (refusing a save because the trail is unavailable) would make the
+  dashboard fail closed on its own bookkeeping.
+- **Seats count** is still unshipped, and stays unshipped until there is a billing story to make a
+  number mean something.
+
+Also fixed in the same release: `installations.last_review_at` and `last_error_code` /
+`last_error_message` / `last_error_at` were read by the dashboard health card and written by nothing,
+so every installation reported "last review never" and the failure banner could only fire from a
+manual edit. A successful review now stamps the time and clears the error; a terminal failure records
+the quoted provider reason; a retry that may still succeed writes nothing, because recording it would
+flash a failure that heals.
 
 **P4 — the parts competitors charge for, done our way.**
 - **Memory inspector**: for any PR, show the stored `last_reviewed_sha`, the remembered body, and
