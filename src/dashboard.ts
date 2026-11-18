@@ -11,14 +11,26 @@
 
 import { csrfToken, getSessionUser, sessionCookie, sessionIsStale, stepUpResponse, verifyCsrf } from './auth';
 import { decryptSecret, encryptSecret } from './crypto';
-import { type DashboardInstallation, dashboardPage, repoSettingsPage, reviewsPage, signInPage, usagePage } from './dashboard-pages';
+import {
+	activityPage,
+	type DashboardInstallation,
+	dashboardPage,
+	repoSettingsPage,
+	reviewsPage,
+	signInPage,
+	usagePage,
+} from './dashboard-pages';
+import type { AuditEntry } from './db';
 import {
 	addMember,
+	countAuditLog,
 	countReviewHistory,
+	listAuditLog,
 	listMembers,
 	listReviewHistory,
 	loadUsageByModel,
 	loadUsageTotals,
+	recordAudit,
 	removeMember,
 	setInstallationKey,
 } from './db';
@@ -33,6 +45,7 @@ import {
 	loadRepoConfig,
 	REVIEW_TONES,
 	type RepoOverridePatch,
+	type RepoOverrideRow,
 	SEVERITY_THRESHOLDS,
 	saveRepoOverride,
 } from './review-config';
@@ -40,6 +53,48 @@ import { sanitizeDetail } from './review-handler';
 import { htmlHeaders } from './security';
 
 const GITHUB_API = 'https://api.github.com';
+
+/**
+ * Audit writes must never swallow the write they describe, and must never be
+ * silent either: a trail with holes is only useful if the holes are visible.
+ */
+async function audit(env: Env, entry: AuditEntry): Promise<void> {
+	try {
+		await recordAudit(env.DB, entry);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		console.error(`Audit log write failed (${entry.action} ${entry.target}): ${message}`);
+	}
+}
+
+/** Only the fields whose stored value actually changed, so the trail reads as a diff. */
+function changedFields(before: RepoOverrideRow | null, patch: RepoOverridePatch): Record<string, unknown> {
+	const previous = (key: keyof RepoOverridePatch): unknown => {
+		if (!before) return null;
+		switch (key) {
+			case 'enabled':
+				return before.enabled !== 0;
+			case 'provider':
+				return before.provider;
+			case 'model':
+				return before.model;
+			case 'severityThreshold':
+				return before.severity_threshold;
+			case 'reviewTone':
+				return before.review_tone;
+			case 'ignorePaths':
+				return before.ignore_paths;
+		}
+	};
+
+	const changes: Record<string, unknown> = {};
+	for (const key of Object.keys(patch) as (keyof RepoOverridePatch)[]) {
+		const from = previous(key);
+		const to = patch[key];
+		if (from !== to) changes[key] = { from, to };
+	}
+	return changes;
+}
 
 /** decodeURIComponent throws on malformed input (`%zz`); a bad path is a 404, not a 500. */
 function safeDecode(value: string): string | null {
@@ -265,7 +320,15 @@ async function handleRepoRoute(request: Request, env: Env, installationId: numbe
 
 		const action = String(form.get('action') ?? 'save');
 		if (action === 'reset') {
+			const before = await getRepoOverride(env.DB, installationId, canonical.owner, canonical.name);
 			await clearRepoOverride(env.DB, installationId, canonical.owner, canonical.name);
+			await audit(env, {
+				installationId,
+				actorLogin: user.login,
+				action: 'repo.reset',
+				target: repo.full_name,
+				detail: before ? { removed: before } : null,
+			});
 			return redirect(`${settingsPath}?saved=reset`);
 		}
 
@@ -298,7 +361,20 @@ async function handleRepoRoute(request: Request, env: Env, installationId: numbe
 			ignorePaths: text('ignore_paths'),
 		};
 
+		const before = await getRepoOverride(env.DB, installationId, canonical.owner, canonical.name);
 		await saveRepoOverride(env.DB, installationId, canonical.owner, canonical.name, patch);
+		// A save that changed nothing is not a change, and an empty entry would
+		// push the real ones down the page.
+		const changes = changedFields(before, patch);
+		if (Object.keys(changes).length > 0) {
+			await audit(env, {
+				installationId,
+				actorLogin: user.login,
+				action: 'repo.updated',
+				target: repo.full_name,
+				detail: changes,
+			});
+		}
 		return redirect(`${settingsPath}?saved=1`);
 	}
 
@@ -371,8 +447,17 @@ async function handleInstallationRoute(request: Request, env: Env, installationI
 			return messagePage('Not saved', 'That key is longer than any provider issues.', 400);
 		}
 		const stored = await encryptSecret(key, env.KEY_ENCRYPTION_SECRET);
-		const saved = await setInstallationKey(env.DB, installationId, stored, `…${key.slice(-4)}`);
+		const hint = `…${key.slice(-4)}`;
+		const saved = await setInstallationKey(env.DB, installationId, stored, hint);
 		if (!saved) return messagePage('Not saved', 'That installation no longer exists.', 404);
+		// The key itself is never recorded — only the same masked hint the page shows.
+		await audit(env, {
+			installationId,
+			actorLogin: user.login,
+			action: 'key.replaced',
+			target: `${row.provider ?? 'unknown'} key`,
+			detail: { hint },
+		});
 		return redirect('/dashboard?saved=key');
 	}
 
@@ -411,7 +496,7 @@ async function handleInstallationRoute(request: Request, env: Env, installationI
 }
 const REPO_ROUTE = /^\/dashboard\/installations\/(\d+)\/repos\/([^/]+)\/([^/]+)$/;
 
-const HISTORY_ROUTES = new Set(['/dashboard/reviews', '/dashboard/usage']);
+const HISTORY_ROUTES = new Set(['/dashboard/reviews', '/dashboard/usage', '/dashboard/activity']);
 
 /**
  * P2: the two read-only pages that answer "what happened" and "what it cost".
@@ -456,32 +541,48 @@ async function handleHistoryRoute(request: Request, env: Env, pathname: string):
 						})),
 					}),
 				)
-			: await (async () => {
-					const [totals, byModel] = await Promise.all([loadUsageTotals(env.DB, ids), loadUsageByModel(env.DB, ids)]);
-					const priced = byModel.map((row) => ({
-						model: row.model,
-						provider: row.provider,
-						reviews: row.reviews,
-						inputTokens: row.inputTokens,
-						outputTokens: row.outputTokens,
-						cost: estimateCost(row.model, row.inputTokens, row.outputTokens),
-					}));
-					// Sum only what is priced. If nothing is, say nothing rather than
-					// showing "$0" for work that did cost money.
-					const known = priced.filter((row): row is typeof row & { cost: number } => row.cost != null);
-					const total = known.length === 0 ? null : known.reduce((sum, row) => sum + row.cost, 0);
-					return html(
-						usagePage({
+			: pathname === '/dashboard/activity'
+				? html(
+						activityPage({
 							user,
 							csrf,
 							installations: ids.length,
-							totals,
-							cost: total,
-							pricingAsOf: PRICING_AS_OF,
-							byModel: priced,
+							total: await countAuditLog(env.DB, ids),
+							rows: (await listAuditLog(env.DB, ids, 50)).map((row) => ({
+								actorLogin: row.actor_login,
+								action: row.action,
+								target: row.target,
+								detail: row.detail,
+								createdAt: row.created_at,
+							})),
 						}),
-					);
-				})();
+					)
+				: await (async () => {
+						const [totals, byModel] = await Promise.all([loadUsageTotals(env.DB, ids), loadUsageByModel(env.DB, ids)]);
+						const priced = byModel.map((row) => ({
+							model: row.model,
+							provider: row.provider,
+							reviews: row.reviews,
+							inputTokens: row.inputTokens,
+							outputTokens: row.outputTokens,
+							cost: estimateCost(row.model, row.inputTokens, row.outputTokens),
+						}));
+						// Sum only what is priced. If nothing is, say nothing rather than
+						// showing "$0" for work that did cost money.
+						const known = priced.filter((row): row is typeof row & { cost: number } => row.cost != null);
+						const total = known.length === 0 ? null : known.reduce((sum, row) => sum + row.cost, 0);
+						return html(
+							usagePage({
+								user,
+								csrf,
+								installations: ids.length,
+								totals,
+								cost: total,
+								pricingAsOf: PRICING_AS_OF,
+								byModel: priced,
+							}),
+						);
+					})();
 
 	response.headers.append('Set-Cookie', sessionCookie(request, user.sessionId));
 	return response;
@@ -525,7 +626,12 @@ async function handleMembersRoute(request: Request, env: Env, installationId: nu
 	}
 
 	if (action === 'remove') {
-		await removeMember(env.DB, installationId, login);
+		const removed = await removeMember(env.DB, installationId, login);
+		// Removing someone who was never on the list changed nothing, so it does
+		// not belong in the trail.
+		if (removed) {
+			await audit(env, { installationId, actorLogin: user.login, action: 'member.removed', target: login });
+		}
 		return redirect(`/dashboard?saved=member-removed`);
 	}
 	if (action !== 'add') {
@@ -533,6 +639,9 @@ async function handleMembersRoute(request: Request, env: Env, installationId: nu
 	}
 
 	const created = await addMember(env.DB, installationId, login, user.login);
+	if (created) {
+		await audit(env, { installationId, actorLogin: user.login, action: 'member.added', target: login });
+	}
 	return redirect(`/dashboard?saved=${created ? 'member-added' : 'member-exists'}`);
 }
 

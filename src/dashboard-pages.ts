@@ -342,13 +342,14 @@ export function repoSettingsPage(data: RepoSettingsData): string {
 // `usagePage` answers "what did it add up to". Both are read-only and both are
 // scoped by the same installation list the overview already uses.
 
-function dashNav(active: 'overview' | 'reviews' | 'usage'): string {
+function dashNav(active: 'overview' | 'reviews' | 'usage' | 'activity'): string {
 	const link = (href: string, label: string, key: typeof active) =>
 		`<a class="nav-link${active === key ? ' is-active' : ''}" href="${href}"${active === key ? ' aria-current="page"' : ''}>${label}</a>`;
 	return `<nav class="dash-nav" aria-label="Dashboard">
       ${link('/dashboard', 'Overview', 'overview')}
       ${link('/dashboard/reviews', 'Reviews', 'reviews')}
       ${link('/dashboard/usage', 'Usage', 'usage')}
+      ${link('/dashboard/activity', 'Activity', 'activity')}
     </nav>`;
 }
 
@@ -524,6 +525,131 @@ export function usagePage(data: UsageData): string {
       ${headline}
       ${models}
       <p class="fineprint">Estimates use list prices per million tokens recorded ${esc(data.pricingAsOf)}; providers change prices, so treat these as a yardstick, not an invoice. ${unpriced ? 'Models missing from the price table show tokens only — AlphaPR does not guess a price it does not know.' : ''} The review itself is counted; the optional PR summary call is not, which makes this a floor rather than a ceiling.</p>
+    </div></div>`,
+		{ signedIn: true, login: user.login, csrf },
+	);
+}
+
+// ─── P3: who changed what ───
+//
+// Four write routes exist and every one of them now leaves a row here. The page
+// answers the first question asked when reviews stop on a repository: who
+// turned it off?
+
+export interface AuditRowView {
+	actorLogin: string;
+	action: string;
+	target: string;
+	detail: string | null;
+	createdAt: string;
+}
+
+export interface ActivityData {
+	user: SessionUser;
+	csrf: string;
+	rows: AuditRowView[];
+	total: number;
+	installations: number;
+}
+
+/** Actions are stored machine-first (`repo.updated`); the page reads better in words. */
+const ACTION_LABELS: Record<string, string> = {
+	'repo.updated': 'Repo settings changed',
+	'repo.reset': 'Repo settings reset',
+	'key.replaced': 'Provider key replaced',
+	'member.added': 'Teammate added',
+	'member.removed': 'Teammate removed',
+};
+
+/**
+ * The stored detail is `{ field: { from, to } }` for a settings change, or a
+ * small object for the other actions. Rendered as readable lines, never as raw
+ * JSON in the page — and anything unparseable is shown as-is rather than lost.
+ */
+/** Render one audit detail value without ever printing `[object Object]`. */
+function describeValue(value: unknown): string {
+	if (value == null) return '—';
+	if (typeof value === 'object') {
+		// Recurse rather than flatten once: an audit entry could nest a row inside
+		// a row, and `String({})` would put `[object Object]` back on the page.
+		return Object.entries(value as Record<string, unknown>)
+			.map(([key, inner]) => `${key} ${inner == null ? 'inherit' : describeValue(inner)}`)
+			.join(', ');
+	}
+	return String(value);
+}
+function describeDetail(detail: string | null): string {
+	if (!detail) return '';
+	try {
+		const parsed = JSON.parse(detail) as Record<string, unknown>;
+		const lines: string[] = [];
+		for (const [field, value] of Object.entries(parsed)) {
+			if (value && typeof value === 'object' && 'from' in value && 'to' in value) {
+				const from = (value as { from: unknown }).from;
+				const to = (value as { to: unknown }).to;
+				lines.push(`${field}: ${from == null ? 'inherit' : String(from)} → ${to == null ? 'inherit' : String(to)}`);
+			} else {
+				// A reset stores the whole row it removed, so the value can be an
+				// object; printing it with String() would render `[object Object]`.
+				lines.push(`${field}: ${describeValue(value)}`);
+			}
+		}
+		return lines.join(' · ');
+	} catch {
+		return detail;
+	}
+}
+
+export function activityPage(data: ActivityData): string {
+	const { user, csrf, rows } = data;
+	const scope =
+		data.total > rows.length
+			? `Showing the ${rows.length} most recent of ${data.total} recorded changes.`
+			: `${data.total} recorded change${data.total === 1 ? '' : 's'}.`;
+
+	const table =
+		rows.length === 0
+			? `<div class="card">
+          <p class="card-title">Nothing has been changed from the dashboard yet.</p>
+          <p class="muted">Replacing a key, editing a repository, resetting one, or adding a teammate all record a row here. Activity starts with the first change after this release was deployed.</p>
+        </div>`
+			: `<div class="dash-table-wrap">
+        <table class="dash-table">
+          <caption class="sr-only">Dashboard changes, newest first</caption>
+          <thead>
+            <tr>
+              <th scope="col">When</th>
+              <th scope="col">Who</th>
+              <th scope="col">What</th>
+              <th scope="col">Target</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+							.map((row) => {
+								const detail = describeDetail(row.detail);
+								return `<tr>
+                <td class="mono">${esc(shortTime(row.createdAt))}</td>
+                <td class="mono">@${esc(row.actorLogin)}</td>
+                <td>${esc(ACTION_LABELS[row.action] ?? row.action)}${detail ? `<span class="muted"> — ${esc(detail)}</span>` : ''}</td>
+                <td class="mono">${esc(row.target)}</td>
+              </tr>`;
+							})
+							.join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+	return shell(
+		'Activity',
+		`<div class="dash"><div class="shell">
+      ${userStrip(user, csrf)}
+      ${dashNav('activity')}
+      <header class="page-head">
+        <h1>Who changed what.</h1>
+        <p class="lede">Every write made from this dashboard across the ${data.installations} installation${data.installations === 1 ? '' : 's'} you administer, newest first. Key text is never recorded — a key change shows the same masked hint the page shows. ${scope}</p>
+      </header>
+      ${table}
     </div></div>`,
 		{ signedIn: true, login: user.login, csrf },
 	);

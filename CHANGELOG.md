@@ -3,6 +3,17 @@
 All notable changes to AlphaPR are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
+## [v1.13.0] — 2026-11-18
+
+### Added
+
+- **An audit trail: who changed what.** A new `audit_log` table (`0017`) and a **/dashboard/activity** page record every write made from the dashboard — repository settings changed, repository settings reset, provider key replaced, teammate added, teammate removed — with the actor's GitHub login, the installation, the target and the time. Only fields whose value actually changed are recorded, each as `{from, to}`, so the page reads as a diff (`provider: inherit → anthropic`) rather than a dump of the row afterwards.
+- A key replacement records the same last-four hint the installation card renders, never the key: `detail` is `{"hint":"…3456"}` and the ciphertext never leaves D1.
+
+### Changed
+
+- A failed audit write is logged with its action, target and error, and does not roll back the change it describes. Refusing a save because the trail is momentarily unavailable would make the dashboard fail closed on its own bookkeeping.
+
 ## [v1.12.0] — 2026-11-09
 
 ### Added

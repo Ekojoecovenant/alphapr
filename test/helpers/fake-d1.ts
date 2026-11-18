@@ -26,6 +26,15 @@ export interface FakeDbSeed {
 	access?: Record<string, { role: string; account_login: string; account_type: string }>;
 	/** Invited teammates, keyed by installation id, for the P3 queries. */
 	members?: Record<number, Array<{ github_login: string; added_by: string; created_at: string }>>;
+	/** Audit rows, read back by /dashboard/activity. */
+	audit?: Array<{
+		installation_id: number;
+		actor_login: string;
+		action: string;
+		target: string;
+		detail: string | null;
+		created_at: string;
+	}>;
 	/** Rows changed by every `run()`; defaults to 1. Set to 0 to fake a no-op update. */
 	changes?: number;
 	/** Rows the P2 review-history queries read. */
@@ -95,6 +104,10 @@ export function makeFakeDb(seed: FakeDbSeed = {}): FakeDb {
 						const key = `${Number(args[0])}:${String(args[1])}/${String(args[2])}`;
 						return ((seed.repoOverrides ?? {})[key] as T) ?? null;
 					}
+					if (/FROM audit_log/.test(sql)) {
+						const ids = args.map(Number);
+						return { entries: (seed.audit ?? []).filter((row) => ids.includes(row.installation_id)).length } as T;
+					}
 					if (/FROM review_history/.test(sql)) {
 						const ids = args.map(Number);
 						const rows = (seed.reviewHistory ?? []).filter((row) => ids.includes(row.installation_id));
@@ -129,6 +142,13 @@ export function makeFakeDb(seed: FakeDbSeed = {}): FakeDb {
 								.map(() => ({ installation_id: Number(installationId) })),
 						);
 						return result(rows as T[]) as never;
+					}
+					if (/FROM audit_log/.test(sql)) {
+						const ids = args.slice(0, -1).map(Number);
+						const rows = (seed.audit ?? []).filter((row) => ids.includes(row.installation_id));
+						const limit = /LIMIT \?/.test(sql) ? Number(args[args.length - 1]) : rows.length;
+						const sorted = [...rows].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+						return result(sorted.slice(0, limit) as T[]) as never;
 					}
 					if (/FROM repos WHERE installation_id/.test(sql)) {
 						return result((seed.repos?.[Number(args[0])] ?? []) as T[]) as never;
