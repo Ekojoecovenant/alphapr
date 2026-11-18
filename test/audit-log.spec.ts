@@ -319,6 +319,25 @@ describe('GET /dashboard/activity', () => {
 		expect(body).toContain('provider anthropic');
 		expect(body).not.toContain('[object Object]');
 	});
+
+	it('flattens a value nested two levels deep', async () => {
+		const fake = makeDb({
+			audit: [
+				{
+					installation_id: 12,
+					actor_login: 'ekojoecovenant',
+					action: 'repo.reset',
+					target: 'acme/api',
+					detail: JSON.stringify({ removed: { nested: { provider: 'anthropic' } } }),
+					created_at: '2026-11-18 22:10:00',
+				},
+			],
+		});
+
+		const body = await (await handleDashboard(request('/dashboard/activity'), makeEnv(fake.db)))?.text();
+		expect(body).toContain('provider anthropic');
+		expect(body).not.toContain('[object Object]');
+	});
 	it('says so plainly when nothing has been changed yet', async () => {
 		const fake = makeDb();
 		const body = await (await handleDashboard(request('/dashboard/activity'), makeEnv(fake.db)))?.text();

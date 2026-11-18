@@ -570,8 +570,10 @@ const ACTION_LABELS: Record<string, string> = {
 function describeValue(value: unknown): string {
 	if (value == null) return '—';
 	if (typeof value === 'object') {
+		// Recurse rather than flatten once: an audit entry could nest a row inside
+		// a row, and `String({})` would put `[object Object]` back on the page.
 		return Object.entries(value as Record<string, unknown>)
-			.map(([key, inner]) => `${key} ${inner == null ? 'inherit' : String(inner)}`)
+			.map(([key, inner]) => `${key} ${inner == null ? 'inherit' : describeValue(inner)}`)
 			.join(', ');
 	}
 	return String(value);
