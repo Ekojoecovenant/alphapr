@@ -566,6 +566,16 @@ const ACTION_LABELS: Record<string, string> = {
  * small object for the other actions. Rendered as readable lines, never as raw
  * JSON in the page — and anything unparseable is shown as-is rather than lost.
  */
+/** Render one audit detail value without ever printing `[object Object]`. */
+function describeValue(value: unknown): string {
+	if (value == null) return '—';
+	if (typeof value === 'object') {
+		return Object.entries(value as Record<string, unknown>)
+			.map(([key, inner]) => `${key} ${inner == null ? 'inherit' : String(inner)}`)
+			.join(', ');
+	}
+	return String(value);
+}
 function describeDetail(detail: string | null): string {
 	if (!detail) return '';
 	try {
@@ -577,7 +587,9 @@ function describeDetail(detail: string | null): string {
 				const to = (value as { to: unknown }).to;
 				lines.push(`${field}: ${from == null ? 'inherit' : String(from)} → ${to == null ? 'inherit' : String(to)}`);
 			} else {
-				lines.push(`${field}: ${value == null ? '—' : String(value)}`);
+				// A reset stores the whole row it removed, so the value can be an
+				// object; printing it with String() would render `[object Object]`.
+				lines.push(`${field}: ${describeValue(value)}`);
 			}
 		}
 		return lines.join(' · ');

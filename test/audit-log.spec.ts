@@ -175,6 +175,59 @@ describe('audit trail', () => {
 		expect(String(entries[0].args[4])).toContain('anthropic');
 	});
 
+	it('records nothing when a save leaves every field as it was', async () => {
+		const fake = makeFakeDb({
+			sessions: [{ session_id: 'sid', last_used_at: null, expires_at: FUTURE, github_id: 4242, login: 'ekojoecovenant', avatar_url: null }],
+			access: { '4242:12': { role: 'admin', account_login: 'acme', account_type: 'Organization' } },
+			installationConfig: INSTALLATION,
+			repoOverrides: {
+				'12:acme/api': {
+					enabled: 1,
+					provider: 'openrouter',
+					model: 'deepseek/deepseek-v4-flash-0731',
+					severity_threshold: 'all',
+					review_tone: 'thorough',
+					ignore_paths: null,
+				},
+			},
+			installations: [],
+		});
+		const csrf = await csrfToken('sid', SECRET);
+
+		await handleDashboard(
+			await post(
+				{
+					csrf,
+					action: 'save',
+					enabled: 'on',
+					provider: 'openrouter',
+					model: 'deepseek/deepseek-v4-flash-0731',
+					severity_threshold: 'all',
+					review_tone: 'thorough',
+					ignore_paths: '',
+				},
+				REPO_PATH,
+			),
+			makeEnv(fake.db),
+		);
+
+		expect(fake.writesStartingWith('INSERT INTO audit_log')).toHaveLength(0);
+	});
+
+	it('records nothing when a removal removed nothing', async () => {
+		const fake = makeFakeDb({
+			sessions: [{ session_id: 'sid', last_used_at: null, expires_at: FUTURE, github_id: 4242, login: 'ekojoecovenant', avatar_url: null }],
+			access: { '4242:12': { role: 'admin', account_login: 'acme', account_type: 'Organization' } },
+			installationConfig: INSTALLATION,
+			changes: 0,
+			installations: [],
+		});
+		const csrf = await csrfToken('sid', SECRET);
+
+		await handleDashboard(await post({ csrf, action: 'remove', login: 'ghost' }, MEMBERS_PATH), makeEnv(fake.db));
+
+		expect(fake.writesStartingWith('INSERT INTO audit_log')).toHaveLength(0);
+	});
 	it('records a key replacement by its masked hint, never the key', async () => {
 		const fake = makeDb();
 		const csrf = await csrfToken('sid', SECRET);
@@ -245,6 +298,27 @@ describe('GET /dashboard/activity', () => {
 		expect(body).toContain('aria-current="page"');
 	});
 
+	it('flattens a reset row instead of printing [object Object]', async () => {
+		const fake = makeDb({
+			audit: [
+				{
+					installation_id: 12,
+					actor_login: 'ekojoecovenant',
+					action: 'repo.reset',
+					target: 'acme/api',
+					detail: JSON.stringify({
+						removed: { enabled: 0, provider: 'anthropic', model: 'claude-sonnet-5', severity_threshold: 'major' },
+					}),
+					created_at: '2026-11-18 22:10:00',
+				},
+			],
+		});
+
+		const body = await (await handleDashboard(request('/dashboard/activity'), makeEnv(fake.db)))?.text();
+		expect(body).toContain('Repo settings reset');
+		expect(body).toContain('provider anthropic');
+		expect(body).not.toContain('[object Object]');
+	});
 	it('says so plainly when nothing has been changed yet', async () => {
 		const fake = makeDb();
 		const body = await (await handleDashboard(request('/dashboard/activity'), makeEnv(fake.db)))?.text();

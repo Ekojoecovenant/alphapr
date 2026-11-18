@@ -236,11 +236,12 @@ export async function addMember(db: D1Database, installationId: number, githubLo
 	return (result.meta.changes ?? 0) > 0;
 }
 
-export async function removeMember(db: D1Database, installationId: number, githubLogin: string): Promise<void> {
-	await db
+export async function removeMember(db: D1Database, installationId: number, githubLogin: string): Promise<boolean> {
+	const result = await db
 		.prepare('DELETE FROM members WHERE installation_id = ? AND lower(github_login) = lower(?)')
 		.bind(installationId, githubLogin)
 		.run();
+	return (result.meta?.changes ?? 0) > 0;
 }
 
 /** Installation ids this login has been invited to. Compared case-insensitively. */

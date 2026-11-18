@@ -363,13 +363,18 @@ async function handleRepoRoute(request: Request, env: Env, installationId: numbe
 
 		const before = await getRepoOverride(env.DB, installationId, canonical.owner, canonical.name);
 		await saveRepoOverride(env.DB, installationId, canonical.owner, canonical.name, patch);
-		await audit(env, {
-			installationId,
-			actorLogin: user.login,
-			action: 'repo.updated',
-			target: repo.full_name,
-			detail: changedFields(before, patch),
-		});
+		// A save that changed nothing is not a change, and an empty entry would
+		// push the real ones down the page.
+		const changes = changedFields(before, patch);
+		if (Object.keys(changes).length > 0) {
+			await audit(env, {
+				installationId,
+				actorLogin: user.login,
+				action: 'repo.updated',
+				target: repo.full_name,
+				detail: changes,
+			});
+		}
 		return redirect(`${settingsPath}?saved=1`);
 	}
 
@@ -621,8 +626,12 @@ async function handleMembersRoute(request: Request, env: Env, installationId: nu
 	}
 
 	if (action === 'remove') {
-		await removeMember(env.DB, installationId, login);
-		await audit(env, { installationId, actorLogin: user.login, action: 'member.removed', target: login });
+		const removed = await removeMember(env.DB, installationId, login);
+		// Removing someone who was never on the list changed nothing, so it does
+		// not belong in the trail.
+		if (removed) {
+			await audit(env, { installationId, actorLogin: user.login, action: 'member.removed', target: login });
+		}
 		return redirect(`/dashboard?saved=member-removed`);
 	}
 	if (action !== 'add') {
